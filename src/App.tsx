@@ -1,4 +1,4 @@
-import { BottleCanvas } from "./Canvas";
+import { BottleCanvas } from "./BottleCanvas";
 
 function App() {
   const now = new Date(2026, 6, 26);

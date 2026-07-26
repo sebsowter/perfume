@@ -10,7 +10,7 @@ export function BottleCanvas() {
         position: "absolute",
         top: "50%",
         left: "50%",
-        width: "min(80vw, 1200px)",
+        width: "min(100vw, 1200px)",
         aspectRatio: "1 / 1",
         transform: "translate(-50%, -50%)",
       }}

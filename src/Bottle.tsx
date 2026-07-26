@@ -17,7 +17,7 @@ export function Bottle() {
         flattenX: 0.35,
         flattenZ: 0.75,
 
-        segments: 256,
+        segments: 512,
 
         bevelSize: 0.1,
         bevelThickness: 0.1,
