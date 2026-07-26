@@ -11,6 +11,7 @@ export function BottleCanvas() {
         top: "50%",
         left: "50%",
         width: "min(100vw, 1200px)",
+        maxHeight: "100vh",
         aspectRatio: "1 / 1",
         transform: "translate(-50%, -50%)",
       }}
