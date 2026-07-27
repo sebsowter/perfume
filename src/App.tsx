@@ -9,7 +9,8 @@ function App() {
       <div
         style={{ position: "relative", padding: "2rem", pointerEvents: "none" }}
       >
-        <p>R3F Glossy Gold Test</p>
+        <p>R3F Fragrance Bottle</p>
+        <p>Glossy Gold Test</p>
         <p>{now.toLocaleDateString()}</p>
       </div>
     </>
