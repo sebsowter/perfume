@@ -1,44 +1,71 @@
-// createBottleBodyGeometry.ts
-
 import * as THREE from "three";
 
-export interface CreateBottleBodyGeometryOptions {
+export interface CreateProfilePlateGeometryOptions {
   shape: THREE.Shape;
+
   height: number;
 
-  ribCount?: number;
-  ribDepth?: number;
-  ribSharpness?: number;
+  /**
+   * Inset from the source shape at the top face.
+   */
+  topInset?: number;
 
-  samplesPerRib?: number;
+  /**
+   * Inset from the source shape at the bottom face.
+   */
+  bottomInset?: number;
+
+  /**
+   * Height of the rounded transition at the top/bottom.
+   */
+  bevelHeight?: number;
+
+  /**
+   * Number of rings used for each bevel.
+   */
+  bevelSegments?: number;
+
+  /**
+   * Number of dense samples used to measure/resample
+   * the input shape by arc length.
+   */
   shapeSamples?: number;
 
-  bevelHeight?: number;
-  bevelInset?: number;
-  bevelSegments?: number;
+  /**
+   * Number of perimeter segments in the final geometry.
+   */
+  perimeterSegments?: number;
+
+  /**
+   * Whether to close the top and bottom faces.
+   */
+  capTop?: boolean;
+  capBottom?: boolean;
 }
 
-export function createBottleBodyGeometry({
+export function createProfilePlateGeometry({
   shape,
+
   height,
 
-  ribCount = 70,
-  ribDepth = 0.5,
-  ribSharpness = 2,
+  topInset = 0,
+  bottomInset = 0,
 
-  samplesPerRib = 10,
-  shapeSamples = 4096,
-
-  bevelHeight = 1.5,
-  bevelInset = 0.8,
+  bevelHeight = 0.6,
   bevelSegments = 6,
-}: CreateBottleBodyGeometryOptions) {
+
+  shapeSamples = 4096,
+  perimeterSegments = 256,
+
+  capTop = true,
+  capBottom = true,
+}: CreateProfilePlateGeometryOptions) {
   const geometry = new THREE.BufferGeometry();
 
   const halfHeight = height / 2;
 
   /*
-   * Sample the source shape densely.
+   * Densely sample the source shape.
    */
   const sourcePoints = shape.getSpacedPoints(shapeSamples);
 
@@ -50,7 +77,7 @@ export function createBottleBodyGeometry({
   }
 
   /*
-   * Measure cumulative perimeter distance.
+   * Measure cumulative arc length.
    */
   const cumulativeDistances: number[] = [0];
 
@@ -65,10 +92,6 @@ export function createBottleBodyGeometry({
   perimeter += sourcePoints[sourcePoints.length - 1].distanceTo(
     sourcePoints[0],
   );
-
-  const perimeterSegments = ribCount * samplesPerRib;
-
-  const segmentLength = perimeter / perimeterSegments;
 
   function getPointAtDistance(distance: number) {
     const d = ((distance % perimeter) + perimeter) % perimeter;
@@ -103,16 +126,16 @@ export function createBottleBodyGeometry({
   }
 
   /*
-   * Resample the profile at equal arc-length intervals.
+   * Equal-distance perimeter samples.
    */
   const profile: THREE.Vector2[] = [];
 
   for (let i = 0; i < perimeterSegments; i++) {
-    profile.push(getPointAtDistance(i * segmentLength));
+    profile.push(getPointAtDistance((i / perimeterSegments) * perimeter));
   }
 
   /*
-   * Cache outward normals for the profile.
+   * Compute outward normals once.
    */
   const normals: THREE.Vector2[] = [];
 
@@ -137,56 +160,48 @@ export function createBottleBodyGeometry({
   /*
    * Build vertical rings.
    *
-   * We use bevelSegments at each end plus one long straight section.
+   * We deliberately allow different top/bottom inset values.
    */
   const rings: {
     y: number;
     inset: number;
   }[] = [];
 
+  const safeBevelHeight = Math.min(bevelHeight, height / 2);
+
   /*
-   * Bottom bevel:
-   * starts inset and expands outward to full body size.
+   * Bottom bevel.
    */
   for (let i = 0; i <= bevelSegments; i++) {
     const t = i / bevelSegments;
 
-    const y = -halfHeight + t * bevelHeight;
-
-    const inset = bevelInset * quarterCircleEase(1 - t);
-
     rings.push({
-      y,
-      inset,
+      y: -halfHeight + t * safeBevelHeight,
+
+      inset: bottomInset * (1 - roundedEase(t)),
     });
   }
 
   /*
-   * Straight body section.
-   *
-   * Avoid duplicating the final bottom bevel ring.
+   * Straight middle ring.
    */
-  rings.push({
-    y: halfHeight - bevelHeight,
-    inset: 0,
-  });
+  if (height > safeBevelHeight * 2) {
+    rings.push({
+      y: halfHeight - safeBevelHeight,
+      inset: 0,
+    });
+  }
 
   /*
-   * Top bevel:
-   * full body size -> inset.
-   *
-   * Start at 1 to avoid duplicating the straight body's top ring.
+   * Top bevel.
    */
   for (let i = 1; i <= bevelSegments; i++) {
     const t = i / bevelSegments;
 
-    const y = halfHeight - bevelHeight + t * bevelHeight;
-
-    const inset = bevelInset * quarterCircleEase(t);
-
     rings.push({
-      y,
-      inset,
+      y: halfHeight - safeBevelHeight + t * safeBevelHeight,
+
+      inset: topInset * roundedEase(t),
     });
   }
 
@@ -194,41 +209,25 @@ export function createBottleBodyGeometry({
   const indices: number[] = [];
 
   /*
-   * Generate every ring using the exact same rib pattern.
+   * Generate perimeter rings.
    */
   for (const ring of rings) {
     for (let i = 0; i < perimeterSegments; i++) {
-      const current = profile[i];
+      const point = profile[i];
       const normal = normals[i];
 
-      const ribSample = i % samplesPerRib;
+      const x = point.x - normal.x * ring.inset;
 
-      const ribT = ribSample / samplesPerRib;
-
-      const wave = (Math.cos(ribT * Math.PI * 2) + 1) / 2;
-
-      const groove = Math.pow(wave, ribSharpness) * ribDepth;
-
-      /*
-       * Both the body roundover and rib recess move
-       * along the same local surface normal.
-       */
-      const totalInset = ring.inset + groove;
-
-      const x = current.x - normal.x * totalInset;
-
-      const z = current.y - normal.y * totalInset;
+      const z = point.y - normal.y * ring.inset;
 
       positions.push(x, ring.y, z);
     }
   }
 
   /*
-   * Stitch neighbouring rings together.
+   * Stitch neighbouring rings.
    */
-  const ringCount = rings.length;
-
-  for (let ringIndex = 0; ringIndex < ringCount - 1; ringIndex++) {
+  for (let ringIndex = 0; ringIndex < rings.length - 1; ringIndex++) {
     const currentRingStart = ringIndex * perimeterSegments;
 
     const nextRingStart = (ringIndex + 1) * perimeterSegments;
@@ -256,6 +255,38 @@ export function createBottleBodyGeometry({
     }
   }
 
+  /*
+   * Bottom cap.
+   */
+  if (capBottom) {
+    const bottomCenterIndex = positions.length / 3;
+
+    positions.push(0, -halfHeight, 0);
+
+    for (let i = 0; i < perimeterSegments; i++) {
+      const next = (i + 1) % perimeterSegments;
+
+      indices.push(bottomCenterIndex, next, i);
+    }
+  }
+
+  /*
+   * Top cap.
+   */
+  if (capTop) {
+    const topRingStart = (rings.length - 1) * perimeterSegments;
+
+    const topCenterIndex = positions.length / 3;
+
+    positions.push(0, halfHeight, 0);
+
+    for (let i = 0; i < perimeterSegments; i++) {
+      const next = (i + 1) % perimeterSegments;
+
+      indices.push(topCenterIndex, topRingStart + i, topRingStart + next);
+    }
+  }
+
   geometry.setAttribute(
     "position",
     new THREE.Float32BufferAttribute(positions, 3),
@@ -270,15 +301,7 @@ export function createBottleBodyGeometry({
   return geometry;
 }
 
-/*
- * Quarter-circle-like easing.
- *
- * 0 -> 0
- * 1 -> 1
- *
- * Gives a rounded roll rather than a linear chamfer.
- */
-function quarterCircleEase(t: number) {
+function roundedEase(t: number) {
   const clamped = THREE.MathUtils.clamp(t, 0, 1);
 
   return 1 - Math.sqrt(Math.max(0, 1 - clamped * clamped));

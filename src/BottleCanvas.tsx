@@ -18,8 +18,10 @@ export function BottleCanvas() {
     >
       <Canvas
         camera={{
-          position: [0, 0, 8],
+          position: [0, 0, 350],
           fov: 35,
+          near: 1,
+          far: 2000,
         }}
         gl={{
           antialias: true,
@@ -28,15 +30,10 @@ export function BottleCanvas() {
         }}
       >
         <ambientLight intensity={1.2} />
-        <directionalLight position={[5, 5, 5]} intensity={3} />
+        <directionalLight position={[150, 150, 150]} intensity={3} />
         <Bottle />
         <Environment preset="studio" />
-        <OrbitControls
-          enablePan={false}
-          enableZoom={false}
-          //minPolarAngle={Math.PI / 2}
-          //maxPolarAngle={Math.PI / 2}
-        />
+        <OrbitControls enablePan enableZoom />
       </Canvas>
     </div>
   );
