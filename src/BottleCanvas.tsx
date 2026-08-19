@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { Canvas } from "@react-three/fiber";
 import { Environment, OrbitControls } from "@react-three/drei";
 import { Bottle } from "./Bottle";
+import { Shadow } from "./Shadow";
 
 export function BottleCanvas() {
   return (
@@ -28,9 +29,11 @@ export function BottleCanvas() {
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure: 1,
         }}
+        shadows
       >
         <ambientLight intensity={1.2} />
         <directionalLight position={[150, 150, 150]} intensity={3} />
+        <Shadow />
         <Bottle />
         <Environment preset="studio" />
         <OrbitControls enablePan enableZoom />

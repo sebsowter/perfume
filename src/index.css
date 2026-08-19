@@ -1,6 +1,6 @@
 :root {
   --color-black: black;
-  --color-white: #f6f4e9;
+  --color-white: #eebf82;
 }
 
 #root {
@@ -8,8 +8,9 @@
   display: flex;
   flex-direction: column;
   flex: 1;
-  background-image: url("/bg.jpg");
+  background-image: url("/bg_marble.jpg");
   background-position: center center;
+  background-size: cover;
 }
 
 body {

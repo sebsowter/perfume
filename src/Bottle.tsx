@@ -96,10 +96,22 @@ export function Bottle() {
 
   const baseY = bodyBottom - body.baseHeight / 2;
   const topY = bodyTop + body.topHeight / 2;
-  const capY = bodyTop + body.topHeight + 0.2 + bottle.capHeight / 2;
+
+  const domeHeight = 0.2;
+
+  const capY = bodyTop + body.topHeight + domeHeight + bottle.capHeight / 2;
+
+  /*
+   * Calculate the actual vertical bounds of the complete bottle.
+   */
+  const bottleBottom = baseY - body.baseHeight / 2;
+
+  const bottleTop = capY + bottle.capHeight / 2;
+
+  const bottleCenterY = (bottleBottom + bottleTop) / 2;
 
   return (
-    <group>
+    <group position={[0, -bottleCenterY, 0]}>
       {/* Main ribbed body */}
       <mesh geometry={bodyGeometry} castShadow receiveShadow>
         <BottleBodyMaterial />

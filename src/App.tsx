@@ -1,7 +1,7 @@
 import { BottleCanvas } from "./BottleCanvas";
 
 function App() {
-  const now = new Date(2026, 6, 26);
+  const now = new Date(2026, 7, 19);
 
   return (
     <>
@@ -10,7 +10,7 @@ function App() {
         style={{ position: "relative", padding: "2rem", pointerEvents: "none" }}
       >
         <p>R3F Fragrance Bottle</p>
-        <p>Glossy Gold Test</p>
+        <p>Phase 1 / Geometry</p>
         <p>{now.toLocaleDateString()}</p>
       </div>
     </>
