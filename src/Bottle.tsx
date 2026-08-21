@@ -56,9 +56,36 @@ export function Bottle() {
           ribSharpness: 2,
           samplesPerRib: 10,
 
+          verticalSegments: 160,
+
           bevelHeight: 1.5,
           bevelInset: 0.8,
-          bevelSegments: 6,
+
+          branding: {
+            width: 46,
+            height: 12,
+            centerY: -25,
+
+            cornerRadius: 1,
+            transition: 0.8,
+            recess: 0.25,
+
+            frame: {
+              outerWidth: 43,
+              outerHeight: 9.5,
+
+              innerWidth: 40,
+              innerHeight: 7,
+
+              outerCornerRadius: 0.9,
+              innerCornerRadius: 0.5,
+
+              raise: 0.22,
+
+              outerTransition: 0.6,
+              innerTransition: 0.15,
+            },
+          },
         }),
 
         topGeometry: createBottleTopGeometry({
