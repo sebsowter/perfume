@@ -27,11 +27,27 @@ const body = {
   baseHeight: 2.5,
 };
 
+const plaque = {
+  centerY: -25,
+  surfaceOffset: -0.03,
+  raise: 0.35,
+  width: 39,
+  height: 10,
+  frameWidth: 0.65,
+  frameHeight: 0.8,
+  frameMarginX: 0.65,
+  frameMarginY: 0.65,
+};
+
+const logo = {
+  width: 26,
+};
+
 export function Bottle() {
   const svg = useLoader(SVGLoader, "/perfume/Hotel_Portofino_Logo.svg");
   const monogramTexture = useTexture("/perfume/VB_Monogram.png");
 
-  const monogramWidth = 7; // mm - tune visually
+  const monogramWidth = 7;
 
   const image = monogramTexture.image as HTMLImageElement;
 
@@ -68,15 +84,12 @@ export function Bottle() {
       segments: 256,
     });
 
-    const plaqueSurfaceOffset = -0.03;
-    const plaqueRaise = 0.35;
-
     return {
       bodyGeometry: createBottleBodyGeometry({
         shape: bodyProfile.shape,
         height: body.mainHeight,
 
-        ribCount: 70,
+        ribCount: 80,
         ribDepth: 0.5,
         ribSharpness: 2,
         samplesPerRib: 10,
@@ -87,20 +100,21 @@ export function Bottle() {
         bevelInset: 0.8,
 
         branding: {
-          width: 46,
-          height: 12,
-          centerY: -25,
+          width: plaque.width + plaque.frameWidth * 2 + plaque.frameMarginX * 2,
+          height:
+            plaque.height + plaque.frameHeight * 2 + plaque.frameMarginY * 2,
+          centerY: plaque.centerY,
 
           cornerRadius: 1,
           transition: 0.8,
           recess: 0.25,
 
           frame: {
-            outerWidth: 43,
-            outerHeight: 9.5,
+            outerWidth: plaque.width + plaque.frameWidth * 2,
+            outerHeight: plaque.height + plaque.frameHeight * 2,
 
-            innerWidth: 40,
-            innerHeight: 7,
+            innerWidth: plaque.width,
+            innerHeight: plaque.height,
 
             outerCornerRadius: 0.9,
             innerCornerRadius: 0.5,
@@ -139,25 +153,29 @@ export function Bottle() {
         height: bottle.capHeight,
         ridges: 70,
         ridgeDepth: 0.1,
+
+        bottomBevelHeight: 0.5,
+        bottomBevelSize: 0.15,
+        bottomBevelSegments: 4,
       }),
 
       plaqueGeometry: createBottlePlaqueGeometry({
         shape: bodyProfile.shape,
 
-        width: 40,
-        height: 7,
+        width: plaque.width,
+        height: plaque.height,
 
-        centerY: -25,
+        centerY: plaque.centerY,
 
-        raise: plaqueRaise,
+        raise: plaque.raise,
 
-        bevelWidthX: 1.4,
+        bevelWidthX: 1.6,
         bevelWidthY: 0.8,
-        bevelPower: 0.55,
+        bevelPower: 0.75,
 
         cornerRadius: 0.5,
 
-        surfaceOffset: plaqueSurfaceOffset,
+        surfaceOffset: plaque.surfaceOffset,
 
         segmentsX: 96,
         segmentsY: 32,
@@ -170,13 +188,10 @@ export function Bottle() {
         sourceWidth: 287.01,
         sourceHeight: 57.7,
 
-        width: 27,
-        centerY: -25,
+        width: logo.width,
+        centerY: plaque.centerY,
 
-        /*
-         * Match the top surface of the turquoise plaque.
-         */
-        surfaceOffset: plaqueSurfaceOffset + plaqueRaise,
+        surfaceOffset: plaque.surfaceOffset + plaque.raise,
 
         depth: 0.02,
 

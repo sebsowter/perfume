@@ -35,6 +35,21 @@ export interface BottleCapGeometryOptions {
    * Number of rings making up the top bevel.
    */
   bevelSegments?: number;
+
+  /**
+   * Very subtle roundover at the bottom of the cap.
+   */
+  bottomBevelHeight?: number;
+
+  /**
+   * How far the very bottom edge rolls inward.
+   */
+  bottomBevelSize?: number;
+
+  /**
+   * Number of rings making up the bottom roundover.
+   */
+  bottomBevelSegments?: number;
 }
 
 export function createBottleCapGeometry({
@@ -50,6 +65,10 @@ export function createBottleCapGeometry({
   bevelHeight = 0.8,
   bevelSize = 1,
   bevelSegments = 8,
+
+  bottomBevelHeight = 0.4,
+  bottomBevelSize = 0.15,
+  bottomBevelSegments = 4,
 }: BottleCapGeometryOptions) {
   const geometry = new THREE.BufferGeometry();
 
@@ -57,19 +76,13 @@ export function createBottleCapGeometry({
 
   const radialSegments = ridges * samplesPerRidge;
 
-  const safeBevelHeight = Math.min(bevelHeight, height);
+  const safeTopBevelHeight = Math.min(bevelHeight, height);
 
-  /*
-   * Horizontal rings.
-   *
-   * The main body is ribbed at full radius.
-   * The top rings progressively:
-   *
-   * - move inward
-   * - lose their rib depth
-   *
-   * so the ridges naturally blend into the smooth top bevel.
-   */
+  const safeBottomBevelHeight = Math.min(
+    bottomBevelHeight,
+    height - safeTopBevelHeight,
+  );
+
   const rings: {
     y: number;
     inset: number;
@@ -77,19 +90,43 @@ export function createBottleCapGeometry({
   }[] = [];
 
   /*
-   * Bottom of cap.
+   * Bottom roundover.
+   *
+   * At the very bottom:
+   * - radius is slightly inset
+   * - ridge depth is slightly reduced
+   *
+   * It quickly returns to the normal cap wall.
    */
-  rings.push({
-    y: -halfHeight,
-    inset: 0,
-    ridgeAmount: 1,
-  });
+  for (let i = 0; i <= bottomBevelSegments; i++) {
+    const t = i / bottomBevelSegments;
+
+    /*
+     * Reverse quarter-circle-like easing.
+     *
+     * t = 0 -> maximum effect
+     * t = 1 -> no effect
+     */
+    const bevelT = 1 - Math.sqrt(Math.max(0, 1 - (1 - t) * (1 - t)));
+
+    rings.push({
+      y: -halfHeight + t * safeBottomBevelHeight,
+
+      inset: bottomBevelSize * bevelT,
+
+      /*
+       * Very subtly fade the ridges at the bottom edge.
+       */
+      ridgeAmount: 1 - bevelT * 0.35,
+    });
+  }
 
   /*
-   * Straight ribbed wall up to the start of the top bevel.
+   * Straight ribbed wall.
    */
   rings.push({
-    y: halfHeight - safeBevelHeight,
+    y: halfHeight - safeTopBevelHeight,
+
     inset: 0,
     ridgeAmount: 1,
   });
@@ -100,21 +137,15 @@ export function createBottleCapGeometry({
   for (let i = 1; i <= bevelSegments; i++) {
     const t = i / bevelSegments;
 
-    /*
-     * Quarter-circle style easing.
-     *
-     * Gives a soft manufactured roundover rather than
-     * a straight chamfer.
-     */
     const bevelT = 1 - Math.sqrt(Math.max(0, 1 - t * t));
 
     rings.push({
-      y: halfHeight - safeBevelHeight + t * safeBevelHeight,
+      y: halfHeight - safeTopBevelHeight + t * safeTopBevelHeight,
 
       inset: bevelSize * bevelT,
 
       /*
-       * Fade the fluting away through the bevel.
+       * Fade the fluting away through the top bevel.
        */
       ridgeAmount: 1 - bevelT,
     });
@@ -132,16 +163,6 @@ export function createBottleCapGeometry({
 
       const angle = u * Math.PI * 2;
 
-      /*
-       * Exact ridge position.
-       *
-       * Because radialSegments is derived from:
-       *
-       * ridges * samplesPerRidge
-       *
-       * every ridge has exactly the same number
-       * of samples.
-       */
       const ridgeSample = i % samplesPerRidge;
 
       const ridgeT = ridgeSample / samplesPerRidge;
@@ -214,8 +235,6 @@ export function createBottleCapGeometry({
 
   /*
    * Flat smooth top.
-   *
-   * Uses the final bevel ring as its perimeter.
    */
   const topRingStart = (rings.length - 1) * radialSegments;
 
