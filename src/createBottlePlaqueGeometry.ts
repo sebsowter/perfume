@@ -14,54 +14,75 @@ export interface CreateBottlePlaqueGeometryOptions {
   centerY: number;
 
   /**
-   * How far the centre/top surface of the plaque
-   * sits proud of its seating surface.
+   * How far the central plaque face sits proud
+   * of its seating surface.
    */
   raise?: number;
 
   /**
-   * Width of the soft bevel on the left/right edges.
+   * Width of the bevel on the left/right sides.
    */
   bevelWidthX?: number;
 
   /**
-   * Width of the soft bevel on the top/bottom edges.
+   * Width of the bevel on the top/bottom sides.
    */
   bevelWidthY?: number;
 
   /**
    * Controls how quickly the bevel rises.
    *
-   * < 1 = rises quickly, then eases gradually
-   * 1   = sine-style easing
+   * < 1 = faster initial rise
+   * 1   = neutral
    * > 1 = slower initial rise
    */
   bevelPower?: number;
 
   /**
-   * Rounded rectangle corner radius.
+   * True circular corner radius.
    */
   cornerRadius?: number;
 
   /**
-   * Horizontal and vertical mesh resolution.
+   * Number of samples used through each outer corner.
    */
-  segmentsX?: number;
-  segmentsY?: number;
+  cornerSegments?: number;
+
+  /**
+   * Number of rings through the bevel.
+   */
+  bevelSegments?: number;
+
+  /**
+   * Resolution of the straight sections of each rounded
+   * rectangle perimeter.
+   */
+  horizontalSegments?: number;
+  verticalSegments?: number;
+
+  /**
+   * Resolution of the flat central face.
+   */
+  faceSegmentsX?: number;
+  faceSegmentsY?: number;
 
   /**
    * Dense sampling used to reconstruct the front
-   * surface of the supplied bottle profile.
+   * bottle profile.
    */
   shapeSamples?: number;
 
   /**
-   * Additional offset away from the bottle surface.
-   *
-   * This positions the whole plaque relative to the
-   * recessed landing/frame without affecting the bevel.
+   * Additional offset away from the nominal bottle surface.
    */
   surfaceOffset?: number;
+}
+
+interface PlaqueRing {
+  width: number;
+  height: number;
+  cornerRadius: number;
+  offset: number;
 }
 
 export function createBottlePlaqueGeometry({
@@ -78,10 +99,16 @@ export function createBottlePlaqueGeometry({
 
   bevelPower = 0.55,
 
-  cornerRadius = 0.5,
+  cornerRadius = 0.8,
 
-  segmentsX = 96,
-  segmentsY = 32,
+  cornerSegments = 16,
+  bevelSegments = 12,
+
+  horizontalSegments = 24,
+  verticalSegments = 6,
+
+  faceSegmentsX = 32,
+  faceSegmentsY = 12,
 
   shapeSamples = 4096,
 
@@ -89,13 +116,8 @@ export function createBottlePlaqueGeometry({
 }: CreateBottlePlaqueGeometryOptions) {
   const geometry = new THREE.BufferGeometry();
 
-  const halfWidth = width / 2;
-  const halfHeight = height / 2;
-
   /*
-   * Sample the bottle profile densely.
-   *
-   * We only need the front half:
+   * Sample front half of bottle profile.
    *
    * shape X -> world X
    * shape Y -> world Z
@@ -104,16 +126,8 @@ export function createBottlePlaqueGeometry({
     .getSpacedPoints(shapeSamples)
     .filter((point) => point.y >= 0);
 
-  /*
-   * Sort by X so we can efficiently interpolate
-   * the front surface at arbitrary horizontal positions.
-   */
   sourcePoints.sort((a, b) => a.x - b.x);
 
-  /*
-   * Find the underlying bottle surface and its
-   * outward normal at a particular X position.
-   */
   function getFrontSurfaceAtX(x: number) {
     const clampedX = THREE.MathUtils.clamp(
       x,
@@ -121,10 +135,6 @@ export function createBottlePlaqueGeometry({
       sourcePoints[sourcePoints.length - 1].x,
     );
 
-    /*
-     * Binary search for the two neighbouring
-     * profile samples.
-     */
     let low = 0;
     let high = sourcePoints.length - 1;
 
@@ -143,7 +153,6 @@ export function createBottlePlaqueGeometry({
     const lowerIndex = upperIndex - 1;
 
     const a = sourcePoints[lowerIndex];
-
     const b = sourcePoints[upperIndex];
 
     const span = b.x - a.x;
@@ -152,19 +161,10 @@ export function createBottlePlaqueGeometry({
 
     const z = THREE.MathUtils.lerp(a.y, b.y, t);
 
-    /*
-     * Tangent along the front profile.
-     */
     const tangent = b.clone().sub(a).normalize();
 
-    /*
-     * Perpendicular gives us the local surface normal.
-     */
     const normal = new THREE.Vector2(tangent.y, -tangent.x).normalize();
 
-    /*
-     * Ensure it points toward the front/outside.
-     */
     if (normal.y < 0) {
       normal.multiplyScalar(-1);
     }
@@ -178,93 +178,189 @@ export function createBottlePlaqueGeometry({
   const positions: number[] = [];
   const indices: number[] = [];
 
-  /*
-   * Generate a rectangular grid.
-   *
-   * Every grid point is projected onto the curved
-   * superellipse surface and then displaced outward
-   * according to the plaque's bevel.
-   */
-  for (let iy = 0; iy <= segmentsY; iy++) {
-    const ty = iy / segmentsY;
+  function addWrappedVertex(localX: number, localY: number, offset: number) {
+    const { z: surfaceZ, normal } = getFrontSurfaceAtX(localX);
 
-    const localY = -halfHeight + ty * height;
+    const worldX = localX + normal.x * offset;
 
     const worldY = centerY + localY;
 
-    for (let ix = 0; ix <= segmentsX; ix++) {
-      const tx = ix / segmentsX;
+    const worldZ = surfaceZ + normal.y * offset;
 
-      const x = -halfWidth + tx * width;
+    const index = positions.length / 3;
 
-      const { z: surfaceZ, normal } = getFrontSurfaceAtX(x);
+    positions.push(worldX, worldY, worldZ);
 
-      /*
-       * Calculate progress through the bevel.
-       *
-       * This uses two nested rounded rectangles:
-       *
-       * outer = physical plaque boundary
-       * inner = point where full plaque height begins
-       *
-       * Because X and Y are inset independently,
-       * the side bevel can be wider than the
-       * top/bottom bevel.
-       */
-      const bevelT = getBevelProgress({
-        x,
-        y: localY,
+    return index;
+  }
 
-        halfWidth,
-        halfHeight,
+  /*
+   * Build nested rounded-rectangle bevel rings.
+   */
+  const rings: PlaqueRing[] = [];
 
-        cornerRadius,
+  const safeCornerRadius = THREE.MathUtils.clamp(
+    cornerRadius,
+    0,
+    Math.min(width / 2, height / 2),
+  );
 
-        bevelWidthX,
-        bevelWidthY,
-      });
+  for (let i = 0; i <= bevelSegments; i++) {
+    const t = i / bevelSegments;
 
-      /*
-       * Fast initial rise followed by a long,
-       * soft transition toward the main surface.
-       *
-       * Lower bevelPower values make the initial
-       * rise steeper.
-       */
-      const shapedT = Math.pow(Math.sin(bevelT * Math.PI * 0.5), bevelPower);
+    const ringWidth = width - bevelWidthX * 2 * t;
 
-      const plaqueRaise = raise * shapedT;
+    const ringHeight = height - bevelWidthY * 2 * t;
 
-      const totalOffset = surfaceOffset + plaqueRaise;
+    /*
+     * Preserve genuine circular corners as the
+     * rounded rectangle contracts inward.
+     */
+    const ringCornerRadius = Math.max(
+      0,
+      safeCornerRadius - Math.min(bevelWidthX, bevelWidthY) * t,
+    );
 
-      /*
-       * Move outward along the local superellipse normal.
-       *
-       * This means the plaque follows the bottle curvature
-       * rather than becoming a flat rectangular plate.
-       */
-      const worldX = x + normal.x * totalOffset;
+    const shapedT = Math.pow(Math.sin(t * Math.PI * 0.5), bevelPower);
 
-      const worldZ = surfaceZ + normal.y * totalOffset;
+    rings.push({
+      width: ringWidth,
+      height: ringHeight,
+      cornerRadius: ringCornerRadius,
 
-      positions.push(worldX, worldY, worldZ);
+      offset: surfaceOffset + raise * shapedT,
+    });
+  }
+
+  /*
+   * Generate matching perimeter profiles.
+   *
+   * Every ring has the exact same point count/order,
+   * so they can be stitched one-to-one.
+   */
+  const ringProfiles = rings.map((ring) =>
+    createRoundedRectPerimeter({
+      width: ring.width,
+
+      height: ring.height,
+
+      cornerRadius: ring.cornerRadius,
+
+      cornerSegments,
+
+      horizontalSegments,
+      verticalSegments,
+    }),
+  );
+
+  const pointsPerRing = ringProfiles[0].length;
+
+  /*
+   * Store vertex indices for each ring.
+   */
+  const ringIndices: number[][] = [];
+
+  for (let ringIndex = 0; ringIndex < ringProfiles.length; ringIndex++) {
+    const ring = rings[ringIndex];
+
+    const profile = ringProfiles[ringIndex];
+
+    const currentIndices: number[] = [];
+
+    for (let i = 0; i < profile.length; i++) {
+      const point = profile[i];
+
+      currentIndices.push(addWrappedVertex(point.x, point.y, ring.offset));
+    }
+
+    ringIndices.push(currentIndices);
+  }
+
+  /*
+   * Stitch bevel rings.
+   */
+  for (let ringIndex = 0; ringIndex < rings.length - 1; ringIndex++) {
+    const current = ringIndices[ringIndex];
+
+    const next = ringIndices[ringIndex + 1];
+
+    for (let i = 0; i < pointsPerRing; i++) {
+      const j = (i + 1) % pointsPerRing;
+
+      indices.push(
+        current[i],
+        next[i],
+        current[j],
+
+        current[j],
+        next[i],
+        next[j],
+      );
     }
   }
 
   /*
-   * Stitch the rectangular grid.
+   * -------------------------------------------------
+   * CENTRAL FACE
+   * -------------------------------------------------
+   *
+   * Instead of a triangle fan, build a structured
+   * 9-patch fill using shared vertices.
+   *
+   * The final bevel ring is reused directly as the
+   * outer boundary of the face.
    */
-  const rowSize = segmentsX + 1;
+  const innerRing = rings[rings.length - 1];
 
-  for (let iy = 0; iy < segmentsY; iy++) {
-    for (let ix = 0; ix < segmentsX; ix++) {
-      const a = iy * rowSize + ix;
+  const innerBoundary = ringIndices[ringIndices.length - 1];
 
-      const b = a + 1;
+  const innerHalfWidth = innerRing.width / 2;
 
-      const c = (iy + 1) * rowSize + ix;
+  const innerHalfHeight = innerRing.height / 2;
 
-      const d = c + 1;
+  const innerRadius = innerRing.cornerRadius;
+
+  const straightHalfWidth = Math.max(0, innerHalfWidth - innerRadius);
+
+  const straightHalfHeight = Math.max(0, innerHalfHeight - innerRadius);
+
+  /*
+   * Create the central rectangular grid.
+   *
+   * This sits inside the four rounded corners.
+   */
+  const centerGrid: number[][] = [];
+
+  for (let iy = 0; iy <= faceSegmentsY; iy++) {
+    const ty = iy / faceSegmentsY;
+
+    const y = THREE.MathUtils.lerp(-straightHalfHeight, straightHalfHeight, ty);
+
+    const row: number[] = [];
+
+    for (let ix = 0; ix <= faceSegmentsX; ix++) {
+      const tx = ix / faceSegmentsX;
+
+      const x = THREE.MathUtils.lerp(-straightHalfWidth, straightHalfWidth, tx);
+
+      row.push(addWrappedVertex(x, y, innerRing.offset));
+    }
+
+    centerGrid.push(row);
+  }
+
+  /*
+   * Fill central rectangular region.
+   */
+  for (let iy = 0; iy < faceSegmentsY; iy++) {
+    for (let ix = 0; ix < faceSegmentsX; ix++) {
+      const a = centerGrid[iy][ix];
+
+      const b = centerGrid[iy][ix + 1];
+
+      const c = centerGrid[iy + 1][ix];
+
+      const d = centerGrid[iy + 1][ix + 1];
 
       indices.push(
         a,
@@ -278,6 +374,182 @@ export function createBottlePlaqueGeometry({
     }
   }
 
+  /*
+   * The rounded perimeter profile is generated in
+   * this order:
+   *
+   * top
+   * top-right
+   * right
+   * bottom-right
+   * bottom
+   * bottom-left
+   * left
+   * top-left
+   *
+   * Each section has a known fixed point count.
+   */
+  const topStart = 0;
+
+  const topRightStart = topStart + horizontalSegments;
+
+  const rightStart = topRightStart + cornerSegments;
+
+  const bottomRightStart = rightStart + verticalSegments;
+
+  const bottomStart = bottomRightStart + cornerSegments;
+
+  const bottomLeftStart = bottomStart + horizontalSegments;
+
+  const leftStart = bottomLeftStart + cornerSegments;
+
+  const topLeftStart = leftStart + verticalSegments;
+
+  /*
+   * -------------------------------------------------
+   * TOP STRIP
+   * -------------------------------------------------
+   */
+  connectEdgeToGrid({
+    boundary: innerBoundary,
+
+    boundaryStart: topStart,
+
+    boundaryCount: horizontalSegments,
+
+    gridEdge: centerGrid[faceSegmentsY],
+
+    indices,
+
+    reverseBoundary: false,
+  });
+
+  /*
+   * -------------------------------------------------
+   * BOTTOM STRIP
+   * -------------------------------------------------
+   */
+  connectEdgeToGrid({
+    boundary: innerBoundary,
+
+    boundaryStart: bottomStart,
+
+    boundaryCount: horizontalSegments,
+
+    gridEdge: centerGrid[0],
+
+    indices,
+
+    reverseBoundary: true,
+  });
+
+  /*
+   * -------------------------------------------------
+   * LEFT / RIGHT STRIPS
+   * -------------------------------------------------
+   */
+
+  const leftGridEdge = centerGrid.map((row) => row[0]);
+
+  const rightGridEdge = centerGrid.map((row) => row[faceSegmentsX]);
+
+  connectEdgeToGrid({
+    boundary: innerBoundary,
+
+    boundaryStart: rightStart,
+
+    boundaryCount: verticalSegments,
+
+    gridEdge: rightGridEdge,
+
+    indices,
+
+    reverseBoundary: false,
+  });
+
+  connectEdgeToGrid({
+    boundary: innerBoundary,
+
+    boundaryStart: leftStart,
+
+    boundaryCount: verticalSegments,
+
+    gridEdge: leftGridEdge,
+
+    indices,
+
+    reverseBoundary: true,
+  });
+
+  /*
+   * -------------------------------------------------
+   * FOUR CORNER PATCHES
+   * -------------------------------------------------
+   *
+   * Each patch runs from the true circular outer corner
+   * to the corresponding corner of the central rectangle.
+   *
+   * This avoids a triangle fan across the whole plaque.
+   * Only each small corner patch converges locally,
+   * where the geometry is tiny and naturally radial.
+   */
+
+  const topRightCenter = centerGrid[faceSegmentsY][faceSegmentsX];
+
+  const bottomRightCenter = centerGrid[0][faceSegmentsX];
+
+  const bottomLeftCenter = centerGrid[0][0];
+
+  const topLeftCenter = centerGrid[faceSegmentsY][0];
+
+  connectCornerPatch({
+    boundary: innerBoundary,
+
+    start: topRightStart,
+
+    count: cornerSegments,
+
+    centerIndex: topRightCenter,
+
+    indices,
+  });
+
+  connectCornerPatch({
+    boundary: innerBoundary,
+
+    start: bottomRightStart,
+
+    count: cornerSegments,
+
+    centerIndex: bottomRightCenter,
+
+    indices,
+  });
+
+  connectCornerPatch({
+    boundary: innerBoundary,
+
+    start: bottomLeftStart,
+
+    count: cornerSegments,
+
+    centerIndex: bottomLeftCenter,
+
+    indices,
+  });
+
+  connectCornerPatch({
+    boundary: innerBoundary,
+
+    start: topLeftStart,
+
+    count: cornerSegments,
+
+    centerIndex: topLeftCenter,
+
+    indices,
+  });
+
   geometry.setAttribute(
     "position",
     new THREE.Float32BufferAttribute(positions, 3),
@@ -285,6 +557,12 @@ export function createBottlePlaqueGeometry({
 
   geometry.setIndex(indices);
 
+  /*
+   * One connected indexed mesh:
+   *
+   * bevel + face + corners all participate in the
+   * same normal calculation.
+   */
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
@@ -292,150 +570,376 @@ export function createBottlePlaqueGeometry({
   return geometry;
 }
 
-/*
- * Calculate how far a point has progressed through
- * the plaque bevel.
- *
- * 0 = physical outer edge
- * 1 = full-height central surface
- *
- * We use two nested rounded rectangles rather than
- * independent linear X/Y distances. This preserves
- * a continuous bevel around the rounded corners.
- */
-function getBevelProgress({
-  x,
-  y,
-
-  halfWidth,
-  halfHeight,
-
-  cornerRadius,
-
-  bevelWidthX,
-  bevelWidthY,
-}: {
-  x: number;
-  y: number;
-
-  halfWidth: number;
-  halfHeight: number;
-
+interface CreateRoundedRectPerimeterOptions {
+  width: number;
+  height: number;
   cornerRadius: number;
 
-  bevelWidthX: number;
-  bevelWidthY: number;
-}) {
-  /*
-   * Distance from the outer physical boundary.
-   */
-  const outerDistance = roundedRectSignedDistance({
-    x,
-    y,
-
-    halfWidth,
-    halfHeight,
-
-    cornerRadius,
-  });
-
-  /*
-   * Outside the plaque entirely.
-   *
-   * Our generated grid should only just touch this
-   * condition at the rounded corners.
-   */
-  if (outerDistance > 0) {
-    return 0;
-  }
-
-  /*
-   * Inner rounded rectangle.
-   *
-   * This represents where the bevel has completely
-   * finished and the main plaque surface begins.
-   */
-  const innerHalfWidth = Math.max(0, halfWidth - bevelWidthX);
-
-  const innerHalfHeight = Math.max(0, halfHeight - bevelWidthY);
-
-  /*
-   * Reduce the inner corner radius as the bevel
-   * moves inward.
-   *
-   * Using the smaller bevel width keeps the corner
-   * transition stable when X and Y bevel widths differ.
-   */
-  const innerCornerRadius = Math.max(
-    0,
-    cornerRadius - Math.min(bevelWidthX, bevelWidthY),
-  );
-
-  const innerDistance = roundedRectSignedDistance({
-    x,
-    y,
-
-    halfWidth: innerHalfWidth,
-
-    halfHeight: innerHalfHeight,
-
-    cornerRadius: innerCornerRadius,
-  });
-
-  /*
-   * Inside the inner rectangle we're fully onto
-   * the raised central surface.
-   */
-  if (innerDistance <= 0) {
-    return 1;
-  }
-
-  /*
-   * Interpolate continuously between the outer
-   * and inner rounded rectangles.
-   */
-  const outerDepth = Math.max(0.000001, -outerDistance);
-
-  return THREE.MathUtils.clamp(outerDepth / (outerDepth + innerDistance), 0, 1);
+  cornerSegments: number;
+  horizontalSegments: number;
+  verticalSegments: number;
 }
 
 /*
- * Signed distance to a rounded rectangle.
- *
- * < 0 = inside
- *   0 = boundary
- * > 0 = outside
+ * Explicit rounded rectangle with true circular corners.
  */
-function roundedRectSignedDistance({
-  x,
-  y,
-
-  halfWidth,
-  halfHeight,
-
+function createRoundedRectPerimeter({
+  width,
+  height,
   cornerRadius,
+
+  cornerSegments,
+  horizontalSegments,
+  verticalSegments,
+}: CreateRoundedRectPerimeterOptions) {
+  const points: THREE.Vector2[] = [];
+
+  const halfWidth = width / 2;
+
+  const halfHeight = height / 2;
+
+  const radius = THREE.MathUtils.clamp(
+    cornerRadius,
+    0,
+    Math.min(halfWidth, halfHeight),
+  );
+
+  const left = -halfWidth;
+
+  const right = halfWidth;
+
+  const bottom = -halfHeight;
+
+  const top = halfHeight;
+
+  const leftInner = left + radius;
+
+  const rightInner = right - radius;
+
+  const bottomInner = bottom + radius;
+
+  const topInner = top - radius;
+
+  /*
+   * Top edge: left -> right
+   */
+  addLinePoints({
+    points,
+
+    x1: leftInner,
+    y1: top,
+
+    x2: rightInner,
+    y2: top,
+
+    segments: horizontalSegments,
+  });
+
+  /*
+   * Top-right corner.
+   */
+  addArcPoints({
+    points,
+
+    centerX: rightInner,
+
+    centerY: topInner,
+
+    radius,
+
+    startAngle: Math.PI / 2,
+
+    endAngle: 0,
+
+    segments: cornerSegments,
+  });
+
+  /*
+   * Right edge: top -> bottom
+   */
+  addLinePoints({
+    points,
+
+    x1: right,
+    y1: topInner,
+
+    x2: right,
+    y2: bottomInner,
+
+    segments: verticalSegments,
+  });
+
+  /*
+   * Bottom-right corner.
+   */
+  addArcPoints({
+    points,
+
+    centerX: rightInner,
+
+    centerY: bottomInner,
+
+    radius,
+
+    startAngle: 0,
+
+    endAngle: -Math.PI / 2,
+
+    segments: cornerSegments,
+  });
+
+  /*
+   * Bottom edge: right -> left
+   */
+  addLinePoints({
+    points,
+
+    x1: rightInner,
+    y1: bottom,
+
+    x2: leftInner,
+    y2: bottom,
+
+    segments: horizontalSegments,
+  });
+
+  /*
+   * Bottom-left corner.
+   */
+  addArcPoints({
+    points,
+
+    centerX: leftInner,
+
+    centerY: bottomInner,
+
+    radius,
+
+    startAngle: -Math.PI / 2,
+
+    endAngle: -Math.PI,
+
+    segments: cornerSegments,
+  });
+
+  /*
+   * Left edge: bottom -> top
+   */
+  addLinePoints({
+    points,
+
+    x1: left,
+    y1: bottomInner,
+
+    x2: left,
+    y2: topInner,
+
+    segments: verticalSegments,
+  });
+
+  /*
+   * Top-left corner.
+   */
+  addArcPoints({
+    points,
+
+    centerX: leftInner,
+
+    centerY: topInner,
+
+    radius,
+
+    startAngle: Math.PI,
+
+    endAngle: Math.PI / 2,
+
+    segments: cornerSegments,
+  });
+
+  return points;
+}
+
+function addLinePoints({
+  points,
+
+  x1,
+  y1,
+
+  x2,
+  y2,
+
+  segments,
 }: {
-  x: number;
-  y: number;
+  points: THREE.Vector2[];
 
-  halfWidth: number;
-  halfHeight: number;
+  x1: number;
+  y1: number;
 
-  cornerRadius: number;
+  x2: number;
+  y2: number;
+
+  segments: number;
 }) {
-  const radius = Math.min(cornerRadius, halfWidth, halfHeight);
+  const safeSegments = Math.max(1, Math.floor(segments));
 
-  const qx = Math.abs(x) - (halfWidth - radius);
+  /*
+   * Exclude final point so adjacent section
+   * owns the shared boundary vertex.
+   */
+  for (let i = 0; i < safeSegments; i++) {
+    const t = i / safeSegments;
 
-  const qy = Math.abs(y) - (halfHeight - radius);
+    points.push(
+      new THREE.Vector2(
+        THREE.MathUtils.lerp(x1, x2, t),
+        THREE.MathUtils.lerp(y1, y2, t),
+      ),
+    );
+  }
+}
 
-  const outsideX = Math.max(qx, 0);
+function addArcPoints({
+  points,
 
-  const outsideY = Math.max(qy, 0);
+  centerX,
+  centerY,
 
-  const outsideDistance = Math.sqrt(outsideX * outsideX + outsideY * outsideY);
+  radius,
 
-  const insideDistance = Math.min(Math.max(qx, qy), 0);
+  startAngle,
+  endAngle,
 
-  return outsideDistance + insideDistance - radius;
+  segments,
+}: {
+  points: THREE.Vector2[];
+
+  centerX: number;
+  centerY: number;
+
+  radius: number;
+
+  startAngle: number;
+  endAngle: number;
+
+  segments: number;
+}) {
+  const safeSegments = Math.max(1, Math.floor(segments));
+
+  /*
+   * Again, exclude final point so sections meet cleanly
+   * without duplicate perimeter vertices.
+   */
+  for (let i = 0; i < safeSegments; i++) {
+    const t = i / safeSegments;
+
+    const angle = THREE.MathUtils.lerp(startAngle, endAngle, t);
+
+    points.push(
+      new THREE.Vector2(
+        centerX + Math.cos(angle) * radius,
+
+        centerY + Math.sin(angle) * radius,
+      ),
+    );
+  }
+}
+
+/*
+ * Connect a straight rounded-rect boundary section
+ * to one edge of the central grid.
+ *
+ * Both sides may have different subdivision counts,
+ * so we walk them proportionally.
+ */
+function connectEdgeToGrid({
+  boundary,
+  boundaryStart,
+  boundaryCount,
+
+  gridEdge,
+
+  indices,
+
+  reverseBoundary,
+}: {
+  boundary: number[];
+
+  boundaryStart: number;
+  boundaryCount: number;
+
+  gridEdge: number[];
+
+  indices: number[];
+
+  reverseBoundary: boolean;
+}) {
+  const boundaryVertices: number[] = [];
+
+  for (let i = 0; i <= boundaryCount; i++) {
+    let index = boundaryStart + i;
+
+    index %= boundary.length;
+
+    boundaryVertices.push(boundary[index]);
+  }
+
+  if (reverseBoundary) {
+    boundaryVertices.reverse();
+  }
+
+  /*
+   * Bridge two polylines using proportional advancement.
+   */
+  let bi = 0;
+  let gi = 0;
+
+  while (bi < boundaryVertices.length - 1 || gi < gridEdge.length - 1) {
+    const nextBProgress = (bi + 1) / Math.max(1, boundaryVertices.length - 1);
+    const nextGProgress = (gi + 1) / Math.max(1, gridEdge.length - 1);
+
+    if (
+      bi < boundaryVertices.length - 1 &&
+      (gi >= gridEdge.length - 1 || nextBProgress <= nextGProgress)
+    ) {
+      indices.push(
+        boundaryVertices[bi],
+        gridEdge[gi],
+        boundaryVertices[bi + 1],
+      );
+
+      bi++;
+    } else {
+      indices.push(boundaryVertices[bi], gridEdge[gi], gridEdge[gi + 1]);
+
+      gi++;
+    }
+  }
+}
+
+/*
+ * Small local fan for one rounded corner.
+ *
+ * This is very different from the old whole-face pyramid:
+ * only the tiny quarter-circle corner patch converges.
+ */
+function connectCornerPatch({
+  boundary,
+  start,
+  count,
+  centerIndex,
+  indices,
+}: {
+  boundary: number[];
+  start: number;
+  count: number;
+  centerIndex: number;
+  indices: number[];
+}) {
+  for (let i = 0; i < count; i++) {
+    const a = boundary[(start + i) % boundary.length];
+
+    const b = boundary[(start + i + 1) % boundary.length];
+
+    indices.push(a, centerIndex, b);
+  }
 }

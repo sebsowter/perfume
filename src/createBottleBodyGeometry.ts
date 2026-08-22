@@ -56,10 +56,20 @@ export interface BottleBodyBrandingOptions {
   cornerRadius?: number;
 
   /**
-   * Width of the transition from the normal ribs
-   * down into the recessed branding region.
+   * Width of the transition from the normal body
+   * surface down into the recessed branding region.
    */
   transition?: number;
+
+  /**
+   * Independent transition used only for fading the
+   * ribs into the branding recess.
+   *
+   * Smaller values make the ribs terminate more tightly
+   * around the branding area without changing the shape
+   * of the recess itself.
+   */
+  ribTransition?: number;
 
   /**
    * How far the branding landing sits below
@@ -267,10 +277,9 @@ export function createBottleBodyGeometry({
       const isFront = current.y > 0;
 
       /*
-       * BRANDING RECESS
+       * BRANDING RECESS MASK
        *
-       * 0 = normal ribbed body
-       * 1 = fully inside recessed branding area
+       * Controls the actual recessed landing.
        */
       const brandingMask =
         branding && isFront
@@ -279,9 +288,11 @@ export function createBottleBodyGeometry({
               y,
 
               width: branding.width,
+
               height: branding.height,
 
               centerX: 0,
+
               centerY: branding.centerY,
 
               cornerRadius: branding.cornerRadius ?? 1,
@@ -291,13 +302,40 @@ export function createBottleBodyGeometry({
           : 0;
 
       /*
-       * Fade the ribs away as they descend into
-       * the branding recess.
+       * RIB MASK
+       *
+       * Independent from brandingMask so the rib
+       * termination can be tighter than the recess.
        */
-      const groove = baseGroove * (1 - brandingMask);
+      const ribMask =
+        branding && isFront
+          ? getRoundedRectMask({
+              x: current.x,
+              y,
+
+              width: branding.width,
+
+              height: branding.height,
+
+              centerX: 0,
+
+              centerY: branding.centerY,
+
+              cornerRadius: branding.cornerRadius ?? 1,
+
+              transition: branding.ribTransition ?? branding.transition ?? 0.8,
+            })
+          : 0;
 
       /*
-       * Recess the smooth branding landing.
+       * Fade only the rib depth using the dedicated
+       * rib mask.
+       */
+      const groove = baseGroove * (1 - ribMask);
+
+      /*
+       * Recess remains controlled by the broader
+       * branding mask.
        */
       const brandingRecess = brandingMask * (branding?.recess ?? 0);
 
@@ -306,9 +344,6 @@ export function createBottleBodyGeometry({
        *
        * Defined by the difference between two independently
        * softened rounded rectangles.
-       *
-       * The outer edge can rise gradually from the recessed
-       * landing, while the inner aperture can remain tight.
        */
       let frameMask = 0;
 
@@ -320,9 +355,11 @@ export function createBottleBodyGeometry({
           y,
 
           width: frame.outerWidth,
+
           height: frame.outerHeight,
 
           centerX: 0,
+
           centerY: branding.centerY,
 
           cornerRadius: frame.outerCornerRadius ?? 1,
@@ -335,9 +372,11 @@ export function createBottleBodyGeometry({
           y,
 
           width: frame.innerWidth,
+
           height: frame.innerHeight,
 
           centerX: 0,
+
           centerY: branding.centerY,
 
           cornerRadius: frame.innerCornerRadius ?? 0.6,
@@ -346,10 +385,9 @@ export function createBottleBodyGeometry({
         });
 
         /*
-         * Outer rectangle minus inner aperture.
+         * Outer rounded rectangle minus inner aperture.
          *
-         * Keep the frame constrained to the branding
-         * recess itself.
+         * Keep the frame constrained to the branding recess.
          */
         frameMask = THREE.MathUtils.clamp(
           outerMask * (1 - innerMask) * brandingMask,
@@ -359,8 +397,8 @@ export function createBottleBodyGeometry({
       }
 
       /*
-       * Raise the gold frame outward from the floor
-       * of the branding recess.
+       * Raise the gold frame outward from the
+       * floor of the recess.
        */
       const frameRaise = frameMask * (branding?.frame?.raise ?? 0);
 
@@ -368,12 +406,12 @@ export function createBottleBodyGeometry({
        * Final displacement from the underlying
        * superellipse profile.
        *
-       * Positive values here represent inward movement:
+       * Positive values represent inward movement:
        *
-       * bodyInset       -> inward
-       * groove          -> inward
-       * brandingRecess  -> inward
-       * frameRaise      -> outward
+       * bodyInset      -> inward
+       * groove         -> inward
+       * brandingRecess -> inward
+       * frameRaise     -> outward
        */
       const totalInset = bodyInset + groove + brandingRecess - frameRaise;
 
@@ -473,7 +511,7 @@ function getBodyInset({
  * 1 = inside
  * 0 = outside
  *
- * with the specified smooth transition across the edge.
+ * with a smooth transition across the edge.
  */
 function getRoundedRectMask({
   x,

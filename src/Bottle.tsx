@@ -28,19 +28,19 @@ const body = {
 };
 
 const plaque = {
-  centerY: -25,
+  centerY: -26,
   surfaceOffset: -0.03,
-  raise: 0.35,
+  raise: 0.1,
   width: 39,
-  height: 10,
-  frameWidth: 0.65,
-  frameHeight: 0.8,
-  frameMarginX: 0.65,
-  frameMarginY: 0.65,
+  height: 11,
+  frameWidth: 0.5,
+  frameHeight: 0.5,
+  frameMarginX: 0.4,
+  frameMarginY: 0.8,
 };
 
 const logo = {
-  width: 26,
+  width: 27,
 };
 
 export function Bottle() {
@@ -91,7 +91,7 @@ export function Bottle() {
 
         ribCount: 80,
         ribDepth: 0.5,
-        ribSharpness: 2,
+        ribSharpness: 1.4,
         samplesPerRib: 10,
 
         verticalSegments: 160,
@@ -105,9 +105,12 @@ export function Bottle() {
             plaque.height + plaque.frameHeight * 2 + plaque.frameMarginY * 2,
           centerY: plaque.centerY,
 
-          cornerRadius: 1,
+          cornerRadius: 1.5,
+
           transition: 0.8,
-          recess: 0.25,
+          ribTransition: 0.35,
+
+          recess: 0.15,
 
           frame: {
             outerWidth: plaque.width + plaque.frameWidth * 2,
@@ -116,12 +119,12 @@ export function Bottle() {
             innerWidth: plaque.width,
             innerHeight: plaque.height,
 
-            outerCornerRadius: 0.9,
+            outerCornerRadius: 0.8,
             innerCornerRadius: 0.5,
 
-            raise: 0.22,
+            raise: 0.3,
 
-            outerTransition: 0.6,
+            outerTransition: 0.8,
             innerTransition: 0.15,
           },
         },
@@ -168,17 +171,23 @@ export function Bottle() {
         centerY: plaque.centerY,
 
         raise: plaque.raise,
-
-        bevelWidthX: 1.6,
+        bevelWidthX: 1,
         bevelWidthY: 0.8,
-        bevelPower: 0.75,
+
+        bevelPower: 0.35,
 
         cornerRadius: 0.5,
 
-        surfaceOffset: plaque.surfaceOffset,
+        cornerSegments: 16,
+        bevelSegments: 12,
 
-        segmentsX: 96,
-        segmentsY: 32,
+        horizontalSegments: 32,
+        verticalSegments: 8,
+
+        faceSegmentsX: 32,
+        faceSegmentsY: 12,
+
+        surfaceOffset: -0.03,
       }),
 
       logoGeometry: createBottleLogoGeometry({
@@ -193,7 +202,7 @@ export function Bottle() {
 
         surfaceOffset: plaque.surfaceOffset + plaque.raise,
 
-        depth: 0.02,
+        depth: 0.01,
 
         bevelSize: 0.03,
         bevelThickness: 0.03,
@@ -335,12 +344,12 @@ function BottleCapMaterial() {
 function BottlePlaqueMaterial() {
   return (
     <meshPhysicalMaterial
-      color="#3f7f82"
-      metalness={0}
-      roughness={0.2}
-      envMapIntensity={1.1}
-      clearcoat={0.35}
-      clearcoatRoughness={0.12}
+      color="#295e60"
+      metalness={0.35}
+      roughness={0.38}
+      envMapIntensity={1.25}
+      clearcoat={0.65}
+      clearcoatRoughness={0.08}
       side={THREE.DoubleSide}
     />
   );
