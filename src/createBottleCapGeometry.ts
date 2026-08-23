@@ -191,6 +191,9 @@ export function createBottleCapGeometry({
 
   /*
    * Stitch neighbouring rings.
+   *
+   * Counter-clockwise when viewed from OUTSIDE
+   * the cap, so THREE.FrontSide renders the exterior.
    */
   for (let ringIndex = 0; ringIndex < rings.length - 1; ringIndex++) {
     const currentRingStart = ringIndex * radialSegments;
@@ -210,18 +213,20 @@ export function createBottleCapGeometry({
 
       indices.push(
         a,
-        b,
         c,
+        b,
 
         c,
-        b,
         d,
+        b,
       );
     }
   }
 
   /*
    * Flat bottom.
+   *
+   * Outward direction is -Y.
    */
   const bottomCenterIndex = positions.length / 3;
 
@@ -230,11 +235,13 @@ export function createBottleCapGeometry({
   for (let i = 0; i < radialSegments; i++) {
     const next = (i + 1) % radialSegments;
 
-    indices.push(bottomCenterIndex, next, i);
+    indices.push(bottomCenterIndex, i, next);
   }
 
   /*
    * Flat smooth top.
+   *
+   * Outward direction is +Y.
    */
   const topRingStart = (rings.length - 1) * radialSegments;
 
@@ -245,7 +252,7 @@ export function createBottleCapGeometry({
   for (let i = 0; i < radialSegments; i++) {
     const next = (i + 1) % radialSegments;
 
-    indices.push(topCenterIndex, topRingStart + i, topRingStart + next);
+    indices.push(topCenterIndex, topRingStart + next, topRingStart + i);
   }
 
   geometry.setAttribute(

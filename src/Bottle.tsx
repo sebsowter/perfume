@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { forwardRef, useMemo } from "react";
 import * as THREE from "three";
 import { useLoader } from "@react-three/fiber";
 import { useTexture } from "@react-three/drei";
@@ -15,26 +15,59 @@ import { createBottleLogoGeometry } from "./createBottleLogoGeometry";
 const bottle = {
   width: 68,
   depth: 23,
-  bodyHeight: 81.5,
-  overallHeight: 113.2,
+
   capWidth: 22,
-  capHeight: 26.2,
+  capHeight: 26.4,
 };
 
 const body = {
-  mainHeight: 76,
-  topHeight: 3,
+  /*
+   * Spec:
+   *
+   * Main bottle section = 81.5 mm
+   * Bottom detail       =  2.5 mm
+   * Top/shoulder total  =  2.5 mm
+   *
+   * Our top geometry adds domeHeight ABOVE topHeight,
+   * therefore:
+   *
+   * 2.3 + 0.2 = 2.5 mm
+   */
+  mainHeight: 81.5,
+
+  topHeight: 2.3,
+  domeHeight: 0.3,
+
   baseHeight: 2.5,
 };
 
 const plaque = {
-  centerY: -26,
+  /*
+   * Previously:
+   *
+   * mainHeight = 76
+   * bodyBottom = -38
+   * centerY    = -26
+   *
+   * Therefore plaque centre was 12 mm above
+   * the bottom of the main ribbed body.
+   *
+   * Preserve that physical relationship now that
+   * mainHeight is correctly 81.5 mm:
+   *
+   * -81.5 / 2 + 12 = -28.75
+   */
+  centerY: -28.75,
+
   surfaceOffset: -0.03,
   raise: 0.1,
+
   width: 39,
   height: 11,
+
   frameWidth: 0.5,
   frameHeight: 0.5,
+
   frameMarginX: 0.4,
   frameMarginY: 0.8,
 };
@@ -43,8 +76,9 @@ const logo = {
   width: 27,
 };
 
-export function Bottle() {
+export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
   const svg = useLoader(SVGLoader, "/perfume/Hotel_Portofino_Logo.svg");
+
   const monogramTexture = useTexture("/perfume/VB_Monogram.png");
 
   const monogramWidth = 7;
@@ -66,20 +100,23 @@ export function Bottle() {
     const bodyProfile = createSuperellipseProfile({
       width: bottle.width,
       depth: bottle.depth,
+
       exponent: 2.8,
       segments: 256,
     });
 
     const topProfile = createSuperellipseProfile({
-      width: bottle.width - 1.0,
-      depth: bottle.depth - 1.0,
+      width: bottle.width - 1,
+      depth: bottle.depth - 1,
+
       exponent: 2.8,
       segments: 256,
     });
 
     const baseProfile = createSuperellipseProfile({
-      width: bottle.width - 1.0,
-      depth: bottle.depth - 1.0,
+      width: bottle.width - 1,
+      depth: bottle.depth - 1,
+
       exponent: 2.8,
       segments: 256,
     });
@@ -92,17 +129,20 @@ export function Bottle() {
         ribCount: 80,
         ribDepth: 0.5,
         ribSharpness: 1.4,
-        samplesPerRib: 10,
+        samplesPerRib: 8,
 
-        verticalSegments: 160,
+        brandingSegments: 40,
+        bevelSegments: 8,
 
         bevelHeight: 1.5,
         bevelInset: 0.8,
 
         branding: {
           width: plaque.width + plaque.frameWidth * 2 + plaque.frameMarginX * 2,
+
           height:
             plaque.height + plaque.frameHeight * 2 + plaque.frameMarginY * 2,
+
           centerY: plaque.centerY,
 
           cornerRadius: 1.5,
@@ -114,9 +154,11 @@ export function Bottle() {
 
           frame: {
             outerWidth: plaque.width + plaque.frameWidth * 2,
+
             outerHeight: plaque.height + plaque.frameHeight * 2,
 
             innerWidth: plaque.width,
+
             innerHeight: plaque.height,
 
             outerCornerRadius: 0.8,
@@ -130,21 +172,32 @@ export function Bottle() {
         },
       }),
 
+      /*
+       * Total top/shoulder height must be 2.5 mm.
+       *
+       * createBottleTopGeometry adds domeHeight above
+       * the supplied geometry height:
+       *
+       * 2.3 + 0.2 = 2.5 mm
+       */
       topGeometry: createBottleTopGeometry({
         shape: topProfile.shape,
-        height: 3,
+
+        height: body.topHeight,
 
         bevelHeight: 0.7,
         bevelSize: 0.45,
         bevelSegments: 8,
 
-        domeHeight: 0.2,
+        domeHeight: body.domeHeight,
+
         domeSegments: 12,
       }),
 
       baseGeometry: createBottleBaseGeometry({
         shape: baseProfile.shape,
-        height: 2.5,
+
+        height: body.baseHeight,
 
         bevelHeight: 0.7,
         bevelSize: 0.45,
@@ -153,7 +206,9 @@ export function Bottle() {
 
       capGeometry: createBottleCapGeometry({
         radius: bottle.capWidth / 2,
+
         height: bottle.capHeight,
+
         ridges: 70,
         ridgeDepth: 0.1,
 
@@ -166,11 +221,13 @@ export function Bottle() {
         shape: bodyProfile.shape,
 
         width: plaque.width,
+
         height: plaque.height,
 
         centerY: plaque.centerY,
 
         raise: plaque.raise,
+
         bevelWidthX: 1,
         bevelWidthY: 0.8,
 
@@ -187,17 +244,19 @@ export function Bottle() {
         faceSegmentsX: 32,
         faceSegmentsY: 12,
 
-        surfaceOffset: -0.03,
+        surfaceOffset: plaque.surfaceOffset,
       }),
 
       logoGeometry: createBottleLogoGeometry({
         shape: bodyProfile.shape,
+
         shapes,
 
         sourceWidth: 287.01,
         sourceHeight: 57.7,
 
         width: logo.width,
+
         centerY: plaque.centerY,
 
         surfaceOffset: plaque.surfaceOffset + plaque.raise,
@@ -211,82 +270,107 @@ export function Bottle() {
     };
   }, [svg.paths]);
 
+  /*
+   * --------------------------------------------------------
+   * VERTICAL STACK
+   * --------------------------------------------------------
+   *
+   * Main ribbed body is centred around local Y = 0.
+   */
+
   const bodyBottom = -body.mainHeight / 2;
+
   const bodyTop = body.mainHeight / 2;
 
-  const baseY = bodyBottom - body.baseHeight / 2;
-  const topY = bodyTop + body.topHeight / 2;
+  /*
+   * BASE
+   *
+   * Base top touches body bottom exactly.
+   */
+  const baseTop = bodyBottom;
 
-  const domeHeight = 0.2;
+  const baseBottom = baseTop - body.baseHeight;
 
-  const capY = bodyTop + body.topHeight + domeHeight + bottle.capHeight / 2;
+  const baseY = (baseBottom + baseTop) / 2;
 
   /*
-   * Calculate the actual vertical bounds of the complete bottle.
+   * TOP / SHOULDER
+   *
+   * Flat bottom of top geometry touches
+   * main body top exactly.
    */
-  const bottleBottom = baseY - body.baseHeight / 2;
+  const topBottom = bodyTop;
 
-  const bottleTop = capY + bottle.capHeight / 2;
+  const topY = topBottom + body.topHeight / 2;
 
+  /*
+   * The top geometry reaches:
+   *
+   * bodyTop
+   * + topHeight
+   * + domeHeight
+   *
+   * = 2.5 mm above the main body.
+   */
+  const domeTop = bodyTop + body.topHeight + body.domeHeight;
+
+  /*
+   * CAP
+   *
+   * Bottom of cap touches the peak of the dome exactly.
+   */
+  const capBottom = domeTop;
+
+  const capY = capBottom + bottle.capHeight / 2;
+
+  const capTop = capBottom + bottle.capHeight;
+
+  /*
+   * Complete bottle bounds.
+   */
+  const bottleBottom = baseBottom;
+
+  const bottleTop = capTop;
+
+  /*
+   * Centre the complete assembled bottle around Y = 0.
+   */
   const bottleCenterY = (bottleBottom + bottleTop) / 2;
 
   return (
-    <group position={[0, -bottleCenterY, 0]}>
+    <group position={[0, -bottleCenterY, 0]} ref={ref}>
       {/* Main ribbed body */}
-      <mesh geometry={bodyGeometry} castShadow receiveShadow>
+      <mesh geometry={bodyGeometry}>
         <BottleBodyMaterial />
       </mesh>
 
-      {/* Smooth top plate */}
-      <mesh
-        geometry={topGeometry}
-        position={[0, topY, 0]}
-        castShadow
-        receiveShadow
-      >
+      {/* Smooth top / shoulder */}
+      <mesh geometry={topGeometry} position={[0, topY, 0]}>
         <BottlePlateMaterial />
       </mesh>
 
       {/* Smooth base */}
-      <mesh
-        geometry={baseGeometry}
-        position={[0, baseY, 0]}
-        castShadow
-        receiveShadow
-      >
+      <mesh geometry={baseGeometry} position={[0, baseY, 0]}>
         <BottlePlateMaterial />
       </mesh>
 
       {/* Cap */}
-      <mesh
-        geometry={capGeometry}
-        position={[0, capY, 0]}
-        castShadow
-        receiveShadow
-      >
+      <mesh geometry={capGeometry} position={[0, capY, 0]}>
         <BottleCapMaterial />
       </mesh>
 
       {/* Plaque */}
-      <mesh
-        geometry={plaqueGeometry}
-        position={[0, 0, 0]}
-        castShadow
-        receiveShadow
-      >
+      <mesh geometry={plaqueGeometry}>
         <BottlePlaqueMaterial />
       </mesh>
 
-      <mesh geometry={logoGeometry} castShadow>
-        <meshPhysicalMaterial
-          color="#b98b31"
-          metalness={1}
-          roughness={0.16}
-          envMapIntensity={1.4}
-        />
+      {/* Logo */}
+      <mesh geometry={logoGeometry}>
+        <BottleLogoMaterial />
       </mesh>
 
-      <mesh position={[0, bottleTop + 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      {/* Monogram */}
+      <mesh position={[0, bottleTop + 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[monogramWidth, monogramHeight]} />
         <meshBasicMaterial
           map={monogramTexture}
@@ -297,46 +381,37 @@ export function Bottle() {
       </mesh>
     </group>
   );
-}
+});
 
 function BottleBodyMaterial() {
   return (
-    <meshPhysicalMaterial
+    <meshStandardMaterial
       color="#b88a32"
       metalness={1}
       roughness={0.24}
       envMapIntensity={1.35}
-      clearcoat={0.02}
-      clearcoatRoughness={0.15}
-      side={THREE.DoubleSide}
     />
   );
 }
 
 function BottlePlateMaterial() {
   return (
-    <meshPhysicalMaterial
+    <meshStandardMaterial
       color="#b98b31"
       metalness={1}
       roughness={0.18}
       envMapIntensity={1.4}
-      clearcoat={0.03}
-      clearcoatRoughness={0.1}
-      side={THREE.DoubleSide}
     />
   );
 }
 
 function BottleCapMaterial() {
   return (
-    <meshPhysicalMaterial
+    <meshStandardMaterial
       color="#b78a31"
       metalness={1}
       roughness={0.14}
       envMapIntensity={1.45}
-      clearcoat={0.03}
-      clearcoatRoughness={0.08}
-      side={THREE.DoubleSide}
     />
   );
 }
@@ -349,8 +424,18 @@ function BottlePlaqueMaterial() {
       roughness={0.38}
       envMapIntensity={1.25}
       clearcoat={0.65}
-      clearcoatRoughness={0.08}
-      side={THREE.DoubleSide}
+      clearcoatRoughness={0.15}
+    />
+  );
+}
+
+function BottleLogoMaterial() {
+  return (
+    <meshStandardMaterial
+      color="#c79a43"
+      metalness={1}
+      roughness={0.3}
+      envMapIntensity={1.15}
     />
   );
 }

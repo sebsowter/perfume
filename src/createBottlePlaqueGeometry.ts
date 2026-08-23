@@ -304,8 +304,7 @@ export function createBottlePlaqueGeometry({
    * CENTRAL FACE
    * -------------------------------------------------
    *
-   * Instead of a triangle fan, build a structured
-   * 9-patch fill using shared vertices.
+   * Structured grid rather than a full triangle fan.
    *
    * The final bevel ring is reused directly as the
    * outer boundary of the face.
@@ -351,6 +350,12 @@ export function createBottlePlaqueGeometry({
 
   /*
    * Fill central rectangular region.
+   *
+   * IMPORTANT:
+   *
+   * This winding faces toward +Z / the front
+   * of the bottle, so THREE.FrontSide renders
+   * the main plaque face correctly.
    */
   for (let iy = 0; iy < faceSegmentsY; iy++) {
     for (let ix = 0; ix < faceSegmentsX; ix++) {
@@ -364,19 +369,18 @@ export function createBottlePlaqueGeometry({
 
       indices.push(
         a,
-        c,
         b,
+        c,
 
         b,
-        c,
         d,
+        c,
       );
     }
   }
 
   /*
-   * The rounded perimeter profile is generated in
-   * this order:
+   * Rounded perimeter profile order:
    *
    * top
    * top-right
@@ -386,8 +390,6 @@ export function createBottlePlaqueGeometry({
    * bottom-left
    * left
    * top-left
-   *
-   * Each section has a known fixed point count.
    */
   const topStart = 0;
 
@@ -485,13 +487,6 @@ export function createBottlePlaqueGeometry({
    * -------------------------------------------------
    * FOUR CORNER PATCHES
    * -------------------------------------------------
-   *
-   * Each patch runs from the true circular outer corner
-   * to the corresponding corner of the central rectangle.
-   *
-   * This avoids a triangle fan across the whole plaque.
-   * Only each small corner patch converges locally,
-   * where the geometry is tiny and naturally radial.
    */
 
   const topRightCenter = centerGrid[faceSegmentsY][faceSegmentsX];
@@ -557,12 +552,6 @@ export function createBottlePlaqueGeometry({
 
   geometry.setIndex(indices);
 
-  /*
-   * One connected indexed mesh:
-   *
-   * bevel + face + corners all participate in the
-   * same normal calculation.
-   */
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
@@ -627,9 +616,11 @@ function createRoundedRectPerimeter({
     points,
 
     x1: leftInner,
+
     y1: top,
 
     x2: rightInner,
+
     y2: top,
 
     segments: horizontalSegments,
@@ -661,9 +652,11 @@ function createRoundedRectPerimeter({
     points,
 
     x1: right,
+
     y1: topInner,
 
     x2: right,
+
     y2: bottomInner,
 
     segments: verticalSegments,
@@ -695,9 +688,11 @@ function createRoundedRectPerimeter({
     points,
 
     x1: rightInner,
+
     y1: bottom,
 
     x2: leftInner,
+
     y2: bottom,
 
     segments: horizontalSegments,
@@ -729,9 +724,11 @@ function createRoundedRectPerimeter({
     points,
 
     x1: left,
+
     y1: bottomInner,
 
     x2: left,
+
     y2: topInner,
 
     segments: verticalSegments,
@@ -826,7 +823,7 @@ function addArcPoints({
   const safeSegments = Math.max(1, Math.floor(segments));
 
   /*
-   * Again, exclude final point so sections meet cleanly
+   * Exclude final point so sections meet cleanly
    * without duplicate perimeter vertices.
    */
   for (let i = 0; i < safeSegments; i++) {
@@ -847,9 +844,6 @@ function addArcPoints({
 /*
  * Connect a straight rounded-rect boundary section
  * to one edge of the central grid.
- *
- * Both sides may have different subdivision counts,
- * so we walk them proportionally.
  */
 function connectEdgeToGrid({
   boundary,
@@ -887,14 +881,12 @@ function connectEdgeToGrid({
     boundaryVertices.reverse();
   }
 
-  /*
-   * Bridge two polylines using proportional advancement.
-   */
   let bi = 0;
   let gi = 0;
 
   while (bi < boundaryVertices.length - 1 || gi < gridEdge.length - 1) {
     const nextBProgress = (bi + 1) / Math.max(1, boundaryVertices.length - 1);
+
     const nextGProgress = (gi + 1) / Math.max(1, gridEdge.length - 1);
 
     if (
@@ -918,9 +910,6 @@ function connectEdgeToGrid({
 
 /*
  * Small local fan for one rounded corner.
- *
- * This is very different from the old whole-face pyramid:
- * only the tiny quarter-circle corner patch converges.
  */
 function connectCornerPatch({
   boundary,

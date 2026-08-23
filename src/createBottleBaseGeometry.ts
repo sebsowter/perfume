@@ -1,3 +1,5 @@
+// createBottleBaseGeometry.ts
+
 import * as THREE from "three";
 
 export interface CreateBottleBaseGeometryOptions {
@@ -48,9 +50,6 @@ export function createBottleBaseGeometry({
    *
    * At the top of the bevel:
    *   inset = 0
-   *
-   * The quarter-circle profile becomes tangent to the
-   * vertical wall as it reaches the full-size profile.
    */
   for (let i = 0; i <= bevelSegments; i++) {
     const t = i / bevelSegments;
@@ -95,26 +94,31 @@ export function createBottleBaseGeometry({
   });
 
   /*
-   * Flat bottom face using the smallest,
-   * inset perimeter ring.
+   * Flat bottom face.
+   *
+   * Outward normal = -Y.
    */
   addCap({
     ringIndex: 0,
     profile,
     positions,
     indices,
-    flip: true,
+    direction: "bottom",
   });
 
   /*
-   * Flat top face using the full-size profile.
+   * Flat top face.
+   *
+   * Outward normal = +Y.
    */
   addCap({
     ringIndex: rings.length - 1,
+
     profile,
     positions,
     indices,
-    flip: false,
+
+    direction: "top",
   });
 
   geometry.setAttribute(
@@ -133,9 +137,6 @@ export function createBottleBaseGeometry({
 
 /*
  * Shared profile helpers.
- *
- * We can move this into profileGeometryUtils.ts once
- * the body/top/base generators are settled.
  */
 export function createProfileData(
   shape: THREE.Shape,
@@ -186,6 +187,7 @@ export function createProfileData(
     const nextIndex = (index + 1) % sourcePoints.length;
 
     const a = sourcePoints[index];
+
     const b = sourcePoints[nextIndex];
 
     const startDistance = cumulativeDistances[index];
@@ -269,11 +271,14 @@ function addSideRings({
   for (const ring of rings) {
     for (let i = 0; i < segmentCount; i++) {
       const point = profile[i];
+
       const normal = normals[i];
 
       positions.push(
         point.x - normal.x * ring.inset,
+
         ring.y,
+
         point.y - normal.y * ring.inset,
       );
     }
@@ -281,6 +286,9 @@ function addSideRings({
 
   /*
    * Stitch rings.
+   *
+   * Wound counter-clockwise when viewed from
+   * outside so THREE.FrontSide renders the exterior.
    */
   for (let r = 0; r < rings.length - 1; r++) {
     const currentStart = r * segmentCount;
@@ -291,19 +299,21 @@ function addSideRings({
       const next = (i + 1) % segmentCount;
 
       const a = currentStart + i;
+
       const b = currentStart + next;
 
       const c = nextStart + i;
+
       const d = nextStart + next;
 
       indices.push(
         a,
-        b,
         c,
+        b,
 
         c,
-        b,
         d,
+        b,
       );
     }
   }
@@ -317,7 +327,7 @@ interface AddCapOptions {
   positions: number[];
   indices: number[];
 
-  flip: boolean;
+  direction: "top" | "bottom";
 }
 
 function addCap({
@@ -325,7 +335,7 @@ function addCap({
   profile,
   positions,
   indices,
-  flip,
+  direction,
 }: AddCapOptions) {
   const segmentCount = profile.length;
 
@@ -343,9 +353,15 @@ function addCap({
   for (let i = 0; i < segmentCount; i++) {
     const next = (i + 1) % segmentCount;
 
-    if (flip) {
+    if (direction === "top") {
+      /*
+       * Outward normal = +Y.
+       */
       indices.push(centerIndex, ringStart + next, ringStart + i);
     } else {
+      /*
+       * Outward normal = -Y.
+       */
       indices.push(centerIndex, ringStart + i, ringStart + next);
     }
   }

@@ -3,45 +3,18 @@
 import * as THREE from "three";
 
 export interface BottleBodyBrandingFrameOptions {
-  /**
-   * Outer dimensions of the raised gold frame.
-   */
   outerWidth: number;
   outerHeight: number;
 
-  /**
-   * Inner aperture dimensions.
-   *
-   * The turquoise insert will eventually sit within this area.
-   */
   innerWidth: number;
   innerHeight: number;
 
-  /**
-   * Rounded corners of the outer edge.
-   */
   outerCornerRadius?: number;
-
-  /**
-   * Rounded corners of the inner aperture.
-   */
   innerCornerRadius?: number;
 
-  /**
-   * How far the frame rises outward from the
-   * floor of the branding recess.
-   */
   raise?: number;
 
-  /**
-   * Soft transition from the recessed body
-   * up onto the outside of the gold frame.
-   */
   outerTransition?: number;
-
-  /**
-   * Tight transition around the inner aperture.
-   */
   innerTransition?: number;
 }
 
@@ -50,36 +23,21 @@ export interface BottleBodyBrandingOptions {
   height: number;
   centerY: number;
 
-  /**
-   * Corner radius of the recessed branding region.
-   */
   cornerRadius?: number;
 
   /**
-   * Width of the transition from the normal body
-   * surface down into the recessed branding region.
+   * Transition of the recessed branding area itself.
    */
   transition?: number;
 
   /**
-   * Independent transition used only for fading the
-   * ribs into the branding recess.
-   *
-   * Smaller values make the ribs terminate more tightly
-   * around the branding area without changing the shape
-   * of the recess itself.
+   * Independent transition used only for fading
+   * the ribs into the branding recess.
    */
   ribTransition?: number;
 
-  /**
-   * How far the branding landing sits below
-   * the nominal bottle surface.
-   */
   recess?: number;
 
-  /**
-   * Optional raised gold frame inside the recess.
-   */
   frame?: BottleBodyBrandingFrameOptions;
 }
 
@@ -95,11 +53,14 @@ export interface CreateBottleBodyGeometryOptions {
   shapeSamples?: number;
 
   /**
-   * Vertical subdivision of the body.
-   *
-   * Needed for smooth branding/recess/frame transitions.
+   * Vertical detail resolution around the branding area.
    */
-  verticalSegments?: number;
+  brandingSegments?: number;
+
+  /**
+   * Vertical resolution of each top/bottom roundover.
+   */
+  bevelSegments?: number;
 
   bevelHeight?: number;
   bevelInset?: number;
@@ -117,7 +78,9 @@ export function createBottleBodyGeometry({
 
   samplesPerRib = 10,
   shapeSamples = 4096,
-  verticalSegments = 160,
+
+  brandingSegments = 40,
+  bevelSegments = 8,
 
   bevelHeight = 1.5,
   bevelInset = 0.8,
@@ -129,8 +92,11 @@ export function createBottleBodyGeometry({
   const halfHeight = height / 2;
 
   /*
-   * Sample source shape densely.
+   * --------------------------------------------------------
+   * SOURCE PROFILE
+   * --------------------------------------------------------
    */
+
   const sourcePoints = shape.getSpacedPoints(shapeSamples);
 
   if (
@@ -158,10 +124,7 @@ export function createBottleBodyGeometry({
   );
 
   /*
-   * Tie perimeter resolution directly to the rib count.
-   *
-   * This keeps every rib equally spaced by real arc length
-   * around the superellipse.
+   * Keep perimeter resolution tied directly to ribs.
    */
   const perimeterSegments = ribCount * samplesPerRib;
 
@@ -200,7 +163,7 @@ export function createBottleBodyGeometry({
   }
 
   /*
-   * Resample profile at equal arc-length intervals.
+   * Equal arc-length samples around the profile.
    */
   const profile: THREE.Vector2[] = [];
 
@@ -209,7 +172,7 @@ export function createBottleBodyGeometry({
   }
 
   /*
-   * Cache outward normals.
+   * Cache outward profile normals.
    */
   const normals: THREE.Vector2[] = [];
 
@@ -231,22 +194,32 @@ export function createBottleBodyGeometry({
     normals.push(normal);
   }
 
+  /*
+   * --------------------------------------------------------
+   * ADAPTIVE VERTICAL SAMPLING
+   * --------------------------------------------------------
+   */
+
+  const yPositions = createAdaptiveYPositions({
+    halfHeight,
+
+    bevelHeight,
+    bevelSegments,
+
+    branding,
+    brandingSegments,
+  });
+
   const positions: number[] = [];
   const indices: number[] = [];
 
   /*
-   * Generate evenly spaced vertical rings.
+   * --------------------------------------------------------
+   * GENERATE VERTICAL RINGS
+   * --------------------------------------------------------
    */
-  const ringCount = verticalSegments + 1;
 
-  for (let ringIndex = 0; ringIndex < ringCount; ringIndex++) {
-    const verticalT = ringIndex / verticalSegments;
-
-    const y = -halfHeight + verticalT * height;
-
-    /*
-     * Existing top/bottom body roundover.
-     */
+  for (const y of yPositions) {
     const bodyInset = getBodyInset({
       y,
       halfHeight,
@@ -270,17 +243,18 @@ export function createBottleBodyGeometry({
       const baseGroove = Math.pow(wave, ribSharpness) * ribDepth;
 
       /*
-       * Our profile uses shape Y as world Z.
+       * shape Y becomes world Z.
        *
-       * Positive profile Y is the front face.
+       * Positive shape Y is the front.
        */
       const isFront = current.y > 0;
 
       /*
-       * BRANDING RECESS MASK
-       *
-       * Controls the actual recessed landing.
+       * ----------------------------------------------------
+       * BRANDING RECESS
+       * ----------------------------------------------------
        */
+
       const brandingMask =
         branding && isFront
           ? getRoundedRectMask({
@@ -302,10 +276,7 @@ export function createBottleBodyGeometry({
           : 0;
 
       /*
-       * RIB MASK
-       *
-       * Independent from brandingMask so the rib
-       * termination can be tighter than the recess.
+       * Independent rib termination mask.
        */
       const ribMask =
         branding && isFront
@@ -327,24 +298,16 @@ export function createBottleBodyGeometry({
             })
           : 0;
 
-      /*
-       * Fade only the rib depth using the dedicated
-       * rib mask.
-       */
       const groove = baseGroove * (1 - ribMask);
 
-      /*
-       * Recess remains controlled by the broader
-       * branding mask.
-       */
       const brandingRecess = brandingMask * (branding?.recess ?? 0);
 
       /*
+       * ----------------------------------------------------
        * GOLD FRAME
-       *
-       * Defined by the difference between two independently
-       * softened rounded rectangles.
+       * ----------------------------------------------------
        */
+
       let frameMask = 0;
 
       if (branding && branding.frame && isFront) {
@@ -384,11 +347,6 @@ export function createBottleBodyGeometry({
           transition: frame.innerTransition ?? 0.15,
         });
 
-        /*
-         * Outer rounded rectangle minus inner aperture.
-         *
-         * Keep the frame constrained to the branding recess.
-         */
         frameMask = THREE.MathUtils.clamp(
           outerMask * (1 - innerMask) * brandingMask,
           0,
@@ -396,22 +354,12 @@ export function createBottleBodyGeometry({
         );
       }
 
-      /*
-       * Raise the gold frame outward from the
-       * floor of the recess.
-       */
       const frameRaise = frameMask * (branding?.frame?.raise ?? 0);
 
       /*
-       * Final displacement from the underlying
-       * superellipse profile.
+       * Final displacement from the underlying profile.
        *
-       * Positive values represent inward movement:
-       *
-       * bodyInset      -> inward
-       * groove         -> inward
-       * brandingRecess -> inward
-       * frameRaise     -> outward
+       * Positive values = inward.
        */
       const totalInset = bodyInset + groove + brandingRecess - frameRaise;
 
@@ -424,8 +372,20 @@ export function createBottleBodyGeometry({
   }
 
   /*
-   * Stitch neighbouring vertical rings.
+   * --------------------------------------------------------
+   * STITCH RINGS
+   * --------------------------------------------------------
+   *
+   * IMPORTANT:
+   *
+   * Winding is deliberately counter-clockwise when
+   * viewed from OUTSIDE the bottle.
+   *
+   * This means THREE.FrontSide renders the exterior.
    */
+
+  const ringCount = yPositions.length;
+
   for (let ringIndex = 0; ringIndex < ringCount - 1; ringIndex++) {
     const currentRingStart = ringIndex * perimeterSegments;
 
@@ -442,14 +402,25 @@ export function createBottleBodyGeometry({
 
       const d = nextRingStart + next;
 
+      /*
+       * Flipped from the previous winding:
+       *
+       * old:
+       * a, b, c
+       * c, b, d
+       *
+       * new:
+       * a, c, b
+       * c, d, b
+       */
       indices.push(
         a,
-        b,
         c,
+        b,
 
         c,
-        b,
         d,
+        b,
       );
     }
   }
@@ -469,8 +440,179 @@ export function createBottleBodyGeometry({
 }
 
 /*
- * Top/bottom roundover of the main ribbed body.
+ * ----------------------------------------------------------
+ * ADAPTIVE Y SAMPLING
+ * ----------------------------------------------------------
  */
+
+function createAdaptiveYPositions({
+  halfHeight,
+
+  bevelHeight,
+  bevelSegments,
+
+  branding,
+  brandingSegments,
+}: {
+  halfHeight: number;
+
+  bevelHeight: number;
+  bevelSegments: number;
+
+  branding?: BottleBodyBrandingOptions;
+  brandingSegments: number;
+}) {
+  const values: number[] = [];
+
+  const bottom = -halfHeight;
+
+  const top = halfHeight;
+
+  const bottomBevelEnd = Math.min(top, bottom + bevelHeight);
+
+  const topBevelStart = Math.max(bottom, top - bevelHeight);
+
+  /*
+   * Bottom body roundover.
+   */
+  addRangeSamples({
+    values,
+
+    start: bottom,
+    end: bottomBevelEnd,
+
+    segments: bevelSegments,
+  });
+
+  /*
+   * Branding/detail region.
+   */
+  if (branding) {
+    const transitionMargin = Math.max(
+      branding.transition ?? 0.8,
+
+      branding.ribTransition ?? branding.transition ?? 0.8,
+
+      branding.frame?.outerTransition ?? 0,
+
+      branding.frame?.innerTransition ?? 0,
+    );
+
+    const brandingBottom =
+      branding.centerY - branding.height / 2 - transitionMargin;
+
+    const brandingTop =
+      branding.centerY + branding.height / 2 + transitionMargin;
+
+    const detailStart = THREE.MathUtils.clamp(
+      brandingBottom,
+      bottomBevelEnd,
+      topBevelStart,
+    );
+
+    const detailEnd = THREE.MathUtils.clamp(
+      brandingTop,
+      bottomBevelEnd,
+      topBevelStart,
+    );
+
+    /*
+     * One ring marks the start of the detailed area.
+     *
+     * The large straight region before it can be
+     * represented by a single quad strip.
+     */
+    addUniqueY(values, detailStart);
+
+    /*
+     * Dense geometry only through the branding area.
+     */
+    addRangeSamples({
+      values,
+
+      start: detailStart,
+      end: detailEnd,
+
+      segments: brandingSegments,
+    });
+
+    addUniqueY(values, detailEnd);
+  }
+
+  /*
+   * Straight body terminates at start of top bevel.
+   */
+  addUniqueY(values, topBevelStart);
+
+  /*
+   * Top body roundover.
+   */
+  addRangeSamples({
+    values,
+
+    start: topBevelStart,
+    end: top,
+
+    segments: bevelSegments,
+  });
+
+  values.sort((a, b) => a - b);
+
+  /*
+   * Remove near-duplicates created where regions meet.
+   */
+  return values.filter(
+    (value, index) =>
+      index === 0 || Math.abs(value - values[index - 1]) > 0.000001,
+  );
+}
+
+function addRangeSamples({
+  values,
+
+  start,
+  end,
+
+  segments,
+}: {
+  values: number[];
+
+  start: number;
+  end: number;
+
+  segments: number;
+}) {
+  if (Math.abs(end - start) < 0.000001) {
+    addUniqueY(values, start);
+
+    return;
+  }
+
+  const safeSegments = Math.max(1, Math.floor(segments));
+
+  for (let i = 0; i <= safeSegments; i++) {
+    const t = i / safeSegments;
+
+    addUniqueY(values, THREE.MathUtils.lerp(start, end, t));
+  }
+}
+
+function addUniqueY(values: number[], value: number) {
+  for (let i = 0; i < values.length; i++) {
+    if (Math.abs(values[i] - value) < 0.000001) {
+      return;
+    }
+  }
+
+  values.push(value);
+}
+
+/*
+ * ----------------------------------------------------------
+ * BODY ROUNDOVER
+ * ----------------------------------------------------------
+ */
+
 function getBodyInset({
   y,
   halfHeight,
@@ -504,15 +646,11 @@ function getBodyInset({
 }
 
 /*
- * Rounded rectangle mask.
- *
- * Returns:
- *
- * 1 = inside
- * 0 = outside
- *
- * with a smooth transition across the edge.
+ * ----------------------------------------------------------
+ * ROUNDED RECT MASK
+ * ----------------------------------------------------------
  */
+
 function getRoundedRectMask({
   x,
   y,
@@ -550,9 +688,6 @@ function getRoundedRectMask({
 
   /*
    * Standard rounded-rectangle signed distance.
-   *
-   * Negative = inside.
-   * Positive = outside.
    */
   const qx = Math.abs(localX) - (halfWidth - radius);
 
@@ -583,9 +718,6 @@ function smoothstep(edge0: number, edge1: number, value: number) {
 
 /*
  * Quarter-circle-like easing.
- *
- * 0 -> 0
- * 1 -> 1
  */
 function quarterCircleEase(t: number) {
   const clamped = THREE.MathUtils.clamp(t, 0, 1);

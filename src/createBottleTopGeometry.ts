@@ -75,23 +75,28 @@ export function createBottleTopGeometry({
   const sideRingCount = rings.length;
 
   /*
-   * Build side rings.
+   * Build side/bevel rings.
    */
   for (const ring of rings) {
     for (let i = 0; i < perimeterSegments; i++) {
       const point = profile[i];
+
       const normal = normals[i];
 
       positions.push(
         point.x - normal.x * ring.inset,
+
         ring.y,
+
         point.y - normal.y * ring.inset,
       );
     }
   }
 
   /*
-   * Stitch sides.
+   * Stitch side/bevel rings.
+   *
+   * Wound so THREE.FrontSide faces outward.
    */
   for (let r = 0; r < sideRingCount - 1; r++) {
     const currentStart = r * perimeterSegments;
@@ -102,24 +107,29 @@ export function createBottleTopGeometry({
       const next = (i + 1) % perimeterSegments;
 
       const a = currentStart + i;
+
       const b = currentStart + next;
+
       const c = nextStart + i;
+
       const d = nextStart + next;
 
       indices.push(
         a,
-        b,
         c,
+        b,
 
         c,
-        b,
         d,
+        b,
       );
     }
   }
 
   /*
    * FLAT BOTTOM
+   *
+   * Outward direction is -Y.
    */
   const bottomCenter = positions.length / 3;
 
@@ -128,7 +138,7 @@ export function createBottleTopGeometry({
   for (let i = 0; i < perimeterSegments; i++) {
     const next = (i + 1) % perimeterSegments;
 
-    indices.push(bottomCenter, next, i);
+    indices.push(bottomCenter, i, next);
   }
 
   /*
@@ -161,6 +171,7 @@ export function createBottleTopGeometry({
 
     for (let i = 0; i < perimeterSegments; i++) {
       const point = profile[i];
+
       const normal = normals[i];
 
       /*
@@ -174,22 +185,30 @@ export function createBottleTopGeometry({
       positions.push(x, y, z);
     }
 
+    /*
+     * Stitch dome rings.
+     *
+     * Same outward winding as the side geometry.
+     */
     for (let i = 0; i < perimeterSegments; i++) {
       const next = (i + 1) % perimeterSegments;
 
       const a = previousRingStart + i;
+
       const b = previousRingStart + next;
+
       const c = ringStart + i;
+
       const d = ringStart + next;
 
       indices.push(
         a,
-        b,
         c,
+        b,
 
         c,
-        b,
         d,
+        b,
       );
     }
 
@@ -198,6 +217,8 @@ export function createBottleTopGeometry({
 
   /*
    * Dome centre.
+   *
+   * Outward direction is +Y.
    */
   const topCenter = positions.length / 3;
 
@@ -206,7 +227,7 @@ export function createBottleTopGeometry({
   for (let i = 0; i < perimeterSegments; i++) {
     const next = (i + 1) % perimeterSegments;
 
-    indices.push(topCenter, previousRingStart + i, previousRingStart + next);
+    indices.push(topCenter, previousRingStart + next, previousRingStart + i);
   }
 
   geometry.setAttribute(
