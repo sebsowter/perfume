@@ -1,8 +1,6 @@
 import { forwardRef, useMemo } from "react";
 import * as THREE from "three";
-import { useLoader } from "@react-three/fiber";
 import { useTexture } from "@react-three/drei";
-import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js";
 
 import { createBottleCapGeometry } from "./createBottleCapGeometry";
 import { createBottleBodyGeometry } from "./createBottleBodyGeometry";
@@ -77,8 +75,6 @@ const logo = {
 };
 
 export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
-  const svg = useLoader(SVGLoader, "/perfume/Hotel_Portofino_Logo.svg");
-
   const monogramTexture = useTexture("/perfume/VB_Monogram.png");
 
   const monogramWidth = 7;
@@ -95,8 +91,6 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
     plaqueGeometry,
     logoGeometry,
   } = useMemo(() => {
-    const shapes = svg.paths.flatMap((path) => SVGLoader.createShapes(path));
-
     const bodyProfile = createSuperellipseProfile({
       width: bottle.width,
       depth: bottle.depth,
@@ -263,7 +257,7 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
         segmentsY: 1,
       }),
     };
-  }, [svg.paths]);
+  }, []);
 
   /*
    * --------------------------------------------------------
