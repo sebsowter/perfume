@@ -211,6 +211,7 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
 
         ridges: 70,
         ridgeDepth: 0.1,
+        samplesPerRidge: 8,
 
         bottomBevelHeight: 0.5,
         bottomBevelSize: 0.15,
@@ -250,22 +251,16 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
       logoGeometry: createBottleLogoGeometry({
         shape: bodyProfile.shape,
 
-        shapes,
-
-        sourceWidth: 287.01,
-        sourceHeight: 57.7,
+        sourceWidth: 1208,
+        sourceHeight: 253,
 
         width: logo.width,
-
         centerY: plaque.centerY,
 
-        surfaceOffset: plaque.surfaceOffset + plaque.raise,
+        surfaceOffset: plaque.surfaceOffset + plaque.raise + 0.02,
 
-        depth: 0.01,
-
-        bevelSize: 0.03,
-        bevelThickness: 0.03,
-        bevelSegments: 2,
+        segmentsX: 32,
+        segmentsY: 1,
       }),
     };
   }, [svg.paths]);
@@ -389,7 +384,7 @@ function BottleBodyMaterial() {
       color="#b88a32"
       metalness={1}
       roughness={0.24}
-      envMapIntensity={1.35}
+      envMapIntensity={1.15}
     />
   );
 }
@@ -399,8 +394,8 @@ function BottlePlateMaterial() {
     <meshStandardMaterial
       color="#b98b31"
       metalness={1}
-      roughness={0.18}
-      envMapIntensity={1.4}
+      roughness={0.19}
+      envMapIntensity={1.2}
     />
   );
 }
@@ -410,8 +405,8 @@ function BottleCapMaterial() {
     <meshStandardMaterial
       color="#b78a31"
       metalness={1}
-      roughness={0.14}
-      envMapIntensity={1.45}
+      roughness={0.15}
+      envMapIntensity={1.25}
     />
   );
 }
@@ -420,9 +415,9 @@ function BottlePlaqueMaterial() {
   return (
     <meshPhysicalMaterial
       color="#295e60"
-      metalness={0.35}
+      metalness={0}
       roughness={0.38}
-      envMapIntensity={1.25}
+      envMapIntensity={1.05}
       clearcoat={0.65}
       clearcoatRoughness={0.15}
     />
@@ -430,12 +425,18 @@ function BottlePlaqueMaterial() {
 }
 
 function BottleLogoMaterial() {
+  const texture = useTexture("/perfume/Hotel_Portofino_Logo.png");
+
   return (
     <meshStandardMaterial
+      map={texture}
       color="#c79a43"
       metalness={1}
       roughness={0.3}
       envMapIntensity={1.15}
+      transparent
+      alphaTest={0.1}
+      depthWrite={false}
     />
   );
 }

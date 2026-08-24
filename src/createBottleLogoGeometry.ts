@@ -3,406 +3,230 @@
 import * as THREE from "three";
 
 export interface CreateBottleLogoGeometryOptions {
-  /**
-   * Bottle cross-section.
-   *
-   * Uses the same superellipse shape as the body/plaque.
-   */
   shape: THREE.Shape;
 
   /**
-   * Shapes created from the supplied SVG paths.
-   */
-  shapes: THREE.Shape[];
-
-  /**
-   * Original SVG viewBox dimensions.
+   * Original artwork dimensions.
    *
-   * Hotel Portofino:
-   * 287.01 × 57.7
+   * Used only to preserve the logo's aspect ratio.
    */
   sourceWidth: number;
   sourceHeight: number;
 
   /**
-   * Final physical width of the complete logo in mm.
-   *
-   * Height is derived automatically from the SVG
-   * aspect ratio.
+   * Final rendered width in model units / mm.
    */
   width: number;
 
   /**
-   * Vertical centre of the logo on the bottle body.
+   * Vertical position relative to the bottle body centre.
    */
   centerY: number;
 
   /**
-   * Distance from the nominal bottle surface to the
-   * surface the lettering sits upon.
+   * Distance outward from the nominal bottle surface.
    *
-   * For the plaque this will normally be:
-   *
-   * plaque.surfaceOffset + plaque.raise
+   * For the logo this should normally place it just
+   * above the finished plaque surface.
    */
-  surfaceOffset?: number;
+  surfaceOffset: number;
 
   /**
-   * Physical extrusion depth of the lettering.
+   * Horizontal subdivisions.
+   *
+   * These allow the logo surface to follow the
+   * bottle's curvature.
    */
-  depth?: number;
+  segmentsX?: number;
 
   /**
-   * Tiny bevel around the lettering.
+   * Vertical subdivisions.
+   *
+   * The bottle profile does not change vertically,
+   * so this can remain very low.
    */
-  bevelSize?: number;
-  bevelThickness?: number;
-  bevelSegments?: number;
+  segmentsY?: number;
 
   /**
    * Dense sampling used to reconstruct the front
    * surface of the supplied bottle profile.
    */
   shapeSamples?: number;
-
-  /**
-   * Curve subdivision used by ExtrudeGeometry.
-   */
-  curveSegments?: number;
 }
 
 export function createBottleLogoGeometry({
   shape,
-  shapes,
 
   sourceWidth,
   sourceHeight,
 
   width,
   centerY,
+  surfaceOffset,
 
-  surfaceOffset = 0,
-
-  depth = 0.1,
-
-  bevelSize = 0.03,
-  bevelThickness = 0.03,
-  bevelSegments = 2,
+  segmentsX = 32,
+  segmentsY = 1,
 
   shapeSamples = 4096,
-  curveSegments = 8,
 }: CreateBottleLogoGeometryOptions) {
-  /*
-   * Preserve the SVG's original aspect ratio.
-   */
-  const scale = width / sourceWidth;
-
-  const finalHeight = sourceHeight * scale;
+  const geometry = new THREE.BufferGeometry();
 
   /*
-   * SVG coordinates:
-   *
-   * x -> right
-   * y -> down
-   *
-   * Bottle coordinates:
-   *
-   * x -> right
-   * y -> up
-   *
-   * So SVG Y needs to be flipped.
+   * Preserve artwork aspect ratio.
    */
-  const transformedShapes = shapes.map((sourceShape) =>
-    transformShape({
-      shape: sourceShape,
+  const height = width * (sourceHeight / sourceWidth);
 
-      sourceWidth,
-      sourceHeight,
-
-      scale,
-    }),
-  );
+  const halfWidth = width / 2;
+  const halfHeight = height / 2;
 
   /*
-   * Let Three.js generate the actual letter geometry.
+   * Sample only the front half of the bottle profile.
    *
-   * At this stage:
-   *
-   * X = horizontal logo position
-   * Y = vertical logo position
-   * Z = extrusion depth
-   *
-   * We then bend those vertices onto the bottle.
+   * shape X -> world X
+   * shape Y -> world Z
    */
-  const geometry = new THREE.ExtrudeGeometry(transformedShapes, {
-    depth,
-
-    bevelEnabled: true,
-    bevelSize,
-    bevelThickness,
-    bevelSegments,
-
-    curveSegments,
-
-    steps: 1,
-  });
-
-  /*
-   * Build a dense representation of the front half
-   * of the bottle profile.
-   */
-  const profilePoints = shape
+  const sourcePoints = shape
     .getSpacedPoints(shapeSamples)
     .filter((point) => point.y >= 0);
 
-  profilePoints.sort((a, b) => a.x - b.x);
+  sourcePoints.sort((a, b) => a.x - b.x);
 
   /*
-   * Pre-calculate the vertical offset needed to place
-   * the centred SVG at centerY.
+   * Find the bottle surface and outward normal
+   * at an arbitrary X coordinate.
    */
-  const logoBottom = centerY - finalHeight / 2;
+  function getFrontSurfaceAtX(x: number) {
+    const clampedX = THREE.MathUtils.clamp(
+      x,
+      sourcePoints[0].x,
+      sourcePoints[sourcePoints.length - 1].x,
+    );
 
-  const position = geometry.getAttribute("position") as THREE.BufferAttribute;
+    let low = 0;
+    let high = sourcePoints.length - 1;
 
-  /*
-   * Bend every extruded SVG vertex onto the
-   * superellipse surface.
-   */
-  for (let i = 0; i < position.count; i++) {
-    const localX = position.getX(i);
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
 
-    const localY = position.getY(i);
+      if (sourcePoints[mid].x < clampedX) {
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
 
-    const extrusionZ = position.getZ(i);
+    const upperIndex = THREE.MathUtils.clamp(low, 1, sourcePoints.length - 1);
 
-    const { z: bottleZ, normal } = getFrontSurfaceAtX(profilePoints, localX);
+    const lowerIndex = upperIndex - 1;
+
+    const a = sourcePoints[lowerIndex];
+
+    const b = sourcePoints[upperIndex];
+
+    const span = b.x - a.x;
+
+    const t = Math.abs(span) > 0.000001 ? (clampedX - a.x) / span : 0;
+
+    const z = THREE.MathUtils.lerp(a.y, b.y, t);
+
+    const tangent = b.clone().sub(a).normalize();
+
+    const normal = new THREE.Vector2(tangent.y, -tangent.x).normalize();
 
     /*
-     * The transformed SVG is already centred around
-     * zero vertically.
-     *
-     * Convert that to bottle world Y.
+     * Ensure the normal points toward
+     * the front/outside of the bottle.
      */
-    const worldY = logoBottom + finalHeight / 2 + localY;
+    if (normal.y < 0) {
+      normal.multiplyScalar(-1);
+    }
 
-    /*
-     * ExtrusionGeometry builds forward along +Z.
-     *
-     * We reinterpret that depth as displacement along
-     * the bottle's local outward profile normal.
-     */
-    const outwardOffset = surfaceOffset + extrusionZ;
-
-    const worldX = localX + normal.x * outwardOffset;
-
-    const worldZ = bottleZ + normal.y * outwardOffset;
-
-    position.setXYZ(i, worldX, worldY, worldZ);
+    return {
+      z,
+      normal,
+    };
   }
 
-  position.needsUpdate = true;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
 
   /*
-   * ExtrudeGeometry normals are no longer correct after
-   * bending, so recalculate them from the final geometry.
+   * Generate one lightweight rectangular grid.
+   *
+   * Every X column follows the curved bottle surface.
    */
-  geometry.computeVertexNormals();
+  for (let iy = 0; iy <= segmentsY; iy++) {
+    const v = iy / segmentsY;
 
+    const localY = THREE.MathUtils.lerp(-halfHeight, halfHeight, v);
+
+    for (let ix = 0; ix <= segmentsX; ix++) {
+      const u = ix / segmentsX;
+
+      const localX = THREE.MathUtils.lerp(-halfWidth, halfWidth, u);
+
+      const { z: surfaceZ, normal } = getFrontSurfaceAtX(localX);
+
+      const worldX = localX + normal.x * surfaceOffset;
+
+      const worldY = centerY + localY;
+
+      const worldZ = surfaceZ + normal.y * surfaceOffset;
+
+      positions.push(worldX, worldY, worldZ);
+
+      /*
+       * Flip V because image textures and the
+       * geometry's vertical coordinate run in
+       * opposite directions.
+       */
+      uvs.push(u, v);
+    }
+  }
+
+  /*
+   * Stitch grid.
+   *
+   * Wound toward the front of the bottle so
+   * THREE.FrontSide renders correctly.
+   */
+  const rowSize = segmentsX + 1;
+
+  for (let iy = 0; iy < segmentsY; iy++) {
+    for (let ix = 0; ix < segmentsX; ix++) {
+      const a = iy * rowSize + ix;
+
+      const b = a + 1;
+
+      const c = (iy + 1) * rowSize + ix;
+
+      const d = c + 1;
+
+      indices.push(
+        a,
+        b,
+        c,
+
+        b,
+        d,
+        c,
+      );
+    }
+  }
+
+  geometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(positions, 3),
+  );
+
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+
+  geometry.setIndex(indices);
+
+  geometry.computeVertexNormals();
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
 
   return geometry;
-}
-
-/*
- * Transform one SVG Shape into bottle/logo coordinates.
- *
- * The SVG artwork itself is not modified conceptually:
- *
- * - scale uniformly
- * - centre horizontally
- * - centre vertically
- * - flip SVG Y into Three.js Y
- *
- * Holes are transformed as well.
- */
-function transformShape({
-  shape,
-
-  sourceWidth,
-  sourceHeight,
-
-  scale,
-}: {
-  shape: THREE.Shape;
-
-  sourceWidth: number;
-  sourceHeight: number;
-
-  scale: number;
-}) {
-  const transformed = transformPath({
-    path: shape,
-
-    sourceWidth,
-    sourceHeight,
-
-    scale,
-  });
-
-  const result = new THREE.Shape();
-
-  result.curves = transformed.curves;
-
-  result.autoClose = transformed.autoClose;
-
-  /*
-   * Preserve counters inside letters such as:
-   *
-   * O
-   * P
-   * R
-   * A
-   * B
-   */
-  result.holes = shape.holes.map((hole) =>
-    transformPath({
-      path: hole,
-
-      sourceWidth,
-      sourceHeight,
-
-      scale,
-    }),
-  );
-
-  return result;
-}
-
-/*
- * Rather than attempting to manually transform every
- * possible Curve subclass, sample the supplied path and
- * rebuild it as a polygonal Path.
- *
- * At the tiny physical size of this lettering, dense
- * sampling is more than sufficient and keeps this utility
- * independent of SVG curve types.
- */
-function transformPath({
-  path,
-
-  sourceWidth,
-  sourceHeight,
-
-  scale,
-}: {
-  path: THREE.Path;
-
-  sourceWidth: number;
-  sourceHeight: number;
-
-  scale: number;
-}) {
-  const points = path.getSpacedPoints(256);
-
-  const result = new THREE.Path();
-
-  if (points.length === 0) {
-    return result;
-  }
-
-  function transformPoint(point: THREE.Vector2) {
-    /*
-     * Centre around the SVG viewBox centre.
-     */
-    const x = (point.x - sourceWidth / 2) * scale;
-
-    /*
-     * SVG Y increases downward, hence the inversion.
-     */
-    const y = (sourceHeight / 2 - point.y) * scale;
-
-    return new THREE.Vector2(x, y);
-  }
-
-  const first = transformPoint(points[0]);
-
-  result.moveTo(first.x, first.y);
-
-  for (let i = 1; i < points.length; i++) {
-    const point = transformPoint(points[i]);
-
-    result.lineTo(point.x, point.y);
-  }
-
-  result.closePath();
-
-  return result;
-}
-
-/*
- * Interpolate the front surface of the bottle at X,
- * including its local outward normal.
- */
-function getFrontSurfaceAtX(profilePoints: THREE.Vector2[], x: number) {
-  const first = profilePoints[0];
-
-  const last = profilePoints[profilePoints.length - 1];
-
-  const clampedX = THREE.MathUtils.clamp(x, first.x, last.x);
-
-  /*
-   * Binary search for neighbouring profile points.
-   */
-  let low = 0;
-
-  let high = profilePoints.length - 1;
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-
-    if (profilePoints[mid].x < clampedX) {
-      low = mid + 1;
-    } else {
-      high = mid - 1;
-    }
-  }
-
-  const upperIndex = THREE.MathUtils.clamp(low, 1, profilePoints.length - 1);
-
-  const lowerIndex = upperIndex - 1;
-
-  const a = profilePoints[lowerIndex];
-
-  const b = profilePoints[upperIndex];
-
-  const span = b.x - a.x;
-
-  const t = Math.abs(span) > 0.000001 ? (clampedX - a.x) / span : 0;
-
-  const z = THREE.MathUtils.lerp(a.y, b.y, t);
-
-  /*
-   * Tangent to the bottle profile.
-   */
-  const tangent = b.clone().sub(a).normalize();
-
-  /*
-   * Perpendicular gives us the profile normal.
-   */
-  const normal = new THREE.Vector2(tangent.y, -tangent.x).normalize();
-
-  /*
-   * Ensure the normal points toward the
-   * front of the bottle.
-   */
-  if (normal.y < 0) {
-    normal.multiplyScalar(-1);
-  }
-
-  return {
-    z,
-    normal,
-  };
 }

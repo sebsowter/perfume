@@ -22,7 +22,7 @@ function App() {
         }}
       >
         <button onClick={() => setView("viewer")}>Final Asset</button>
-        <button onClick={() => setView("canvas")}>Generator</button>
+        <button onClick={() => setView("canvas")}>Uncompressed Asset</button>
       </div>
 
       {view === "viewer" ? <BottleViewer /> : <BottleCanvas />}
@@ -37,7 +37,7 @@ function App() {
         <p>R3F Fragrance Bottle</p>
         <p>Phase 2 / Branding</p>
         <p>{now.toLocaleDateString()}</p>
-        <p>{view === "viewer" ? "Final Asset" : "Generator"}</p>
+        <p>{view === "viewer" ? "Final Asset" : "Uncompressed Asset"}</p>
       </div>
     </>
   );

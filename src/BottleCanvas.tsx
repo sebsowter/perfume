@@ -4,21 +4,14 @@ import { Canvas } from "@react-three/fiber";
 import { Environment, OrbitControls } from "@react-three/drei";
 
 import { Bottle } from "./Bottle";
-import { Shadow } from "./Shadow";
-import { exportGLB } from "./exportGlb";
+//import { Shadow } from "./Shadow";
+import { exportGLB } from "./exportGLB";
 
 export function BottleCanvas() {
   const bottleRef = useRef<THREE.Group>(null);
 
   const handleExport = async () => {
-    console.log("EXPORT CLICK");
-
-    if (!bottleRef.current) {
-      console.warn("Bottle ref is not available");
-      return;
-    }
-
-    console.log("bottleRef.current", bottleRef.current);
+    if (!bottleRef.current) return;
 
     await exportGLB(bottleRef.current, "hotel-portofino.glb");
   };
@@ -30,9 +23,9 @@ export function BottleCanvas() {
           position: "absolute",
           top: "50%",
           left: "50%",
-          width: "min(100vw, 1200px)",
           maxHeight: "100vh",
-          aspectRatio: "1 / 1",
+          width: "min(800px, 66.6667vh, 100vw)",
+          aspectRatio: "2 / 3",
           transform: "translate(-50%, -50%)",
         }}
       >
@@ -53,7 +46,7 @@ export function BottleCanvas() {
 
           <directionalLight position={[0, 0, 150]} intensity={3} />
 
-          <Shadow />
+          {/* <Shadow /> */}
 
           <Bottle ref={bottleRef} />
 

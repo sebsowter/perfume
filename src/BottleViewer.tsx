@@ -12,8 +12,17 @@ export function BottleViewer() {
     const orbit = {
       startAzimuth: 15,
       startPolar: 70,
-      horizontalRange: 40,
-      verticalRange: 20,
+      horizontalRange: 30,
+      verticalRange: 15,
+    };
+
+    const shadowConfig = {
+      baseX: -4,
+      baseY: -18,
+      baseZ: -18,
+      rotationY: 0.1,
+      horizontalOffset: 6,
+      verticalOffset: -10,
     };
 
     const container = containerRef.current;
@@ -34,7 +43,7 @@ export function BottleViewer() {
       2000,
     );
 
-    camera.position.setFromSphericalCoords(300, startPolar, startAzimuth);
+    camera.position.setFromSphericalCoords(350, startPolar, startAzimuth);
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -104,10 +113,6 @@ export function BottleViewer() {
     let shadowMaterial: THREE.MeshBasicMaterial | null = null;
     let environmentTexture: THREE.DataTexture | null = null;
 
-    /*
-     * Load everything before adding the bottle/shadow
-     * to the scene.
-     */
     const loadAssets = async () => {
       try {
         const [gltf, hdrTexture, loadedShadowTexture] = await Promise.all([
@@ -122,22 +127,14 @@ export function BottleViewer() {
           return;
         }
 
-        /*
-         * Environment.
-         */
         hdrTexture.mapping = THREE.EquirectangularReflectionMapping;
 
         environmentTexture = hdrTexture;
         scene.environment = environmentTexture;
+        scene.environmentRotation.y = Math.PI * 0.25;
 
-        /*
-         * Bottle.
-         */
         bottle = gltf.scene;
 
-        /*
-         * Fake shadow.
-         */
         loadedShadowTexture.colorSpace = THREE.SRGBColorSpace;
         shadowTexture = loadedShadowTexture;
 
@@ -146,18 +143,20 @@ export function BottleViewer() {
         shadowMaterial = new THREE.MeshBasicMaterial({
           map: shadowTexture,
           transparent: true,
-          opacity: 0.85,
+          opacity: 0.75,
           depthWrite: false,
         });
 
         shadow = new THREE.Mesh(shadowGeometry, shadowMaterial);
 
-        shadow.position.set(-4, -18, -18);
-        shadow.rotation.set(0, 0.25, 0);
+        shadow.position.set(
+          shadowConfig.baseX,
+          shadowConfig.baseY,
+          shadowConfig.baseZ,
+        );
 
-        /*
-         * Add both together only once everything is ready.
-         */
+        shadow.rotation.set(0, shadowConfig.rotationY, 0);
+
         scene.add(shadow);
         scene.add(bottle);
       } catch (error) {
@@ -171,8 +170,20 @@ export function BottleViewer() {
      * Resize.
      */
     const handleResize = () => {
-      const width = container.clientWidth;
-      const height = container.clientHeight;
+      const canvasWidth = 800;
+      const canvasHeight = 1200;
+
+      const scale = Math.min(
+        window.innerWidth / canvasWidth,
+        window.innerHeight / canvasHeight,
+        1,
+      );
+
+      const width = canvasWidth * scale;
+      const height = canvasHeight * scale;
+
+      container.style.width = `${width}px`;
+      container.style.height = `${height}px`;
 
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
@@ -180,6 +191,7 @@ export function BottleViewer() {
       renderer.setSize(width, height);
     };
 
+    handleResize();
     window.addEventListener("resize", handleResize);
 
     /*
@@ -191,18 +203,50 @@ export function BottleViewer() {
       animationFrame = requestAnimationFrame(animate);
 
       controls.update();
+
+      if (shadow) {
+        const azimuth = controls.getAzimuthalAngle();
+        const polar = controls.getPolarAngle();
+
+        /*
+         * Difference from our authored starting view.
+         */
+        const azimuthDelta =
+          (azimuth - startAzimuth) /
+          THREE.MathUtils.degToRad(orbit.horizontalRange);
+
+        const polarDelta =
+          (polar - startPolar) / THREE.MathUtils.degToRad(orbit.verticalRange);
+
+        /*
+         * Oppose the horizontal camera motion slightly.
+         *
+         * This makes the fake shadow feel as though it stays
+         * grounded behind the bottle rather than being glued
+         * to the screen.
+         */
+        const shadowX =
+          shadowConfig.baseX - azimuthDelta * shadowConfig.horizontalOffset;
+
+        /*
+         * Small vertical response to viewing from above/below.
+         */
+        const shadowY =
+          shadowConfig.baseY - polarDelta * shadowConfig.verticalOffset;
+
+        shadow.position.set(shadowX, shadowY, shadowConfig.baseZ);
+      }
+
       renderer.render(scene, camera);
     };
 
     animate();
 
-    /*
-     * Cleanup.
-     */
     return () => {
       disposed = true;
 
       cancelAnimationFrame(animationFrame);
+
       window.removeEventListener("resize", handleResize);
 
       controls.dispose();
@@ -249,8 +293,8 @@ export function BottleViewer() {
         position: "absolute",
         top: "50%",
         left: "50%",
-        width: "min(100vw, 100vh, 1200px)",
-        height: "min(100vw, 100vh, 1200px)",
+        width: "800px",
+        height: "1200px",
         transform: "translate(-50%, -50%)",
       }}
     />
