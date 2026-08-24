@@ -21,8 +21,8 @@ function App() {
           gap: "0.5rem",
         }}
       >
-        <button onClick={() => setView("viewer")}>Final Asset</button>
-        <button onClick={() => setView("canvas")}>Uncompressed Asset</button>
+        <button onClick={() => setView("viewer")}>Delivery Asset</button>
+        <button onClick={() => setView("canvas")}>Master Asset</button>
       </div>
 
       {view === "viewer" ? <BottleViewer /> : <BottleCanvas />}
@@ -37,7 +37,7 @@ function App() {
         <p>R3F Fragrance Bottle</p>
         <p>Phase 2 / Branding</p>
         <p>{now.toLocaleDateString()}</p>
-        <p>{view === "viewer" ? "Final Asset" : "Uncompressed Asset"}</p>
+        <p>{view === "viewer" ? "Delivery Asset" : "Master Asset"}</p>
       </div>
     </>
   );
