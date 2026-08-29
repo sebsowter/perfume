@@ -123,10 +123,13 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
         ribCount: 80,
         ribDepth: 0.5,
         ribSharpness: 1.4,
-        samplesPerRib: 8,
+        samplesPerRib: 12,
+        samplesPerY: 3,
+        simplifyPositionTolerance: 0.01,
+        simplifyNormalTolerance: 0.5,
 
-        brandingSegments: 40,
-        bevelSegments: 8,
+        //brandingSegments: 40,
+        // bevelSegments: 8,
 
         bevelHeight: 1.5,
         bevelInset: 0.8,
@@ -330,7 +333,7 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
     <group position={[0, -bottleCenterY, 0]} ref={ref}>
       {/* Main ribbed body */}
       <mesh geometry={bodyGeometry}>
-        <BottleBodyMaterial />
+        <BottleBodyMaterial2 />
       </mesh>
 
       {/* Smooth top / shoulder */}
@@ -372,7 +375,7 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
   );
 });
 
-function BottleBodyMaterial() {
+function BottleBodyMaterial2() {
   return (
     <meshStandardMaterial
       color="#b88a32"
@@ -381,6 +384,10 @@ function BottleBodyMaterial() {
       envMapIntensity={1.15}
     />
   );
+}
+
+function BottleBodyMaterial() {
+  return <meshBasicMaterial color="gray" wireframe />;
 }
 
 function BottlePlateMaterial() {

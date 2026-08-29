@@ -53,19 +53,50 @@ export interface CreateBottleBodyGeometryOptions {
   shapeSamples?: number;
 
   /**
-   * Vertical detail resolution around the branding area.
+   * Number of dense source samples per vertical model unit/mm.
+   *
+   * For an 81.5 mm body:
+   *
+   * samplesPerY: 2
+   *
+   * produces roughly 163 source segments before simplification.
+   *
+   * These source vertices are only used to construct the accurate
+   * surface and normals. Redundant points are removed afterwards.
    */
-  brandingSegments?: number;
+  samplesPerY?: number;
 
   /**
-   * Vertical resolution of each top/bottom roundover.
+   * Maximum positional error, in model units/mm, allowed when
+   * removing a vertical point.
+   *
+   * Lower = retain more geometry.
    */
-  bevelSegments?: number;
+  simplifyPositionTolerance?: number;
+
+  /**
+   * Maximum normal deviation, in degrees, allowed when removing
+   * a vertical point.
+   *
+   * This protects subtle curved/bevelled shading even where the
+   * positional change is extremely small.
+   */
+  simplifyNormalTolerance?: number;
 
   bevelHeight?: number;
   bevelInset?: number;
 
   branding?: BottleBodyBrandingOptions;
+}
+
+interface DenseVertex {
+  position: THREE.Vector3;
+  normal: THREE.Vector3;
+  denseIndex: number;
+}
+
+interface SimplifiedVertex extends DenseVertex {
+  index: number;
 }
 
 export function createBottleBodyGeometry({
@@ -79,16 +110,16 @@ export function createBottleBodyGeometry({
   samplesPerRib = 10,
   shapeSamples = 4096,
 
-  brandingSegments = 40,
-  bevelSegments = 8,
+  samplesPerY = 2,
+
+  simplifyPositionTolerance = 0.002,
+  simplifyNormalTolerance = 0.75,
 
   bevelHeight = 1.5,
   bevelInset = 0.8,
 
   branding,
 }: CreateBottleBodyGeometryOptions) {
-  const geometry = new THREE.BufferGeometry();
-
   const halfHeight = height / 2;
 
   /*
@@ -106,16 +137,12 @@ export function createBottleBodyGeometry({
     sourcePoints.pop();
   }
 
-  /*
-   * Measure cumulative perimeter distance.
-   */
   const cumulativeDistances: number[] = [0];
 
   let perimeter = 0;
 
   for (let i = 1; i < sourcePoints.length; i++) {
     perimeter += sourcePoints[i].distanceTo(sourcePoints[i - 1]);
-
     cumulativeDistances.push(perimeter);
   }
 
@@ -124,10 +151,9 @@ export function createBottleBodyGeometry({
   );
 
   /*
-   * Keep perimeter resolution tied directly to ribs.
+   * Keep perimeter resolution tied directly to the ribs.
    */
   const perimeterSegments = ribCount * samplesPerRib;
-
   const segmentLength = perimeter / perimeterSegments;
 
   function getPointAtDistance(distance: number) {
@@ -163,7 +189,7 @@ export function createBottleBodyGeometry({
   }
 
   /*
-   * Equal arc-length samples around the profile.
+   * Equal arc-length samples around the bottle profile.
    */
   const profile: THREE.Vector2[] = [];
 
@@ -172,9 +198,11 @@ export function createBottleBodyGeometry({
   }
 
   /*
-   * Cache outward profile normals.
+   * Outward normals of the undeformed superellipse profile.
+   *
+   * These are used to push the surface inward/outward.
    */
-  const normals: THREE.Vector2[] = [];
+  const profileNormals: THREE.Vector2[] = [];
 
   for (let i = 0; i < perimeterSegments; i++) {
     const previous = profile[(i - 1 + perimeterSegments) % perimeterSegments];
@@ -191,35 +219,33 @@ export function createBottleBodyGeometry({
       normal.multiplyScalar(-1);
     }
 
-    normals.push(normal);
+    profileNormals.push(normal);
   }
 
   /*
    * --------------------------------------------------------
-   * ADAPTIVE VERTICAL SAMPLING
+   * DENSE REGULAR Y GRID
    * --------------------------------------------------------
+   *
+   * Build the accurate body on a completely regular source mesh.
+   *
+   * This is important because normals are calculated BEFORE
+   * simplification, while triangle density/aspect ratios are
+   * still consistent over the whole bottle.
    */
 
-  const yPositions = createAdaptiveYPositions({
-    halfHeight,
+  const denseVerticalSegments = Math.max(2, Math.ceil(height * samplesPerY));
 
-    bevelHeight,
-    bevelSegments,
+  const denseRingCount = denseVerticalSegments + 1;
 
-    branding,
-    brandingSegments,
-  });
+  const densePositions: number[] = [];
+  const denseIndices: number[] = [];
 
-  const positions: number[] = [];
-  const indices: number[] = [];
+  for (let ringIndex = 0; ringIndex < denseRingCount; ringIndex++) {
+    const verticalT = ringIndex / denseVerticalSegments;
 
-  /*
-   * --------------------------------------------------------
-   * GENERATE VERTICAL RINGS
-   * --------------------------------------------------------
-   */
+    const y = THREE.MathUtils.lerp(-halfHeight, halfHeight, verticalT);
 
-  for (const y of yPositions) {
     const bodyInset = getBodyInset({
       y,
       halfHeight,
@@ -229,13 +255,12 @@ export function createBottleBodyGeometry({
 
     for (let i = 0; i < perimeterSegments; i++) {
       const current = profile[i];
-      const normal = normals[i];
+      const profileNormal = profileNormals[i];
 
       /*
        * Rib profile.
        */
       const ribSample = i % samplesPerRib;
-
       const ribT = ribSample / samplesPerRib;
 
       const wave = (Math.cos(ribT * Math.PI * 2) + 1) / 2;
@@ -262,11 +287,9 @@ export function createBottleBodyGeometry({
               y,
 
               width: branding.width,
-
               height: branding.height,
 
               centerX: 0,
-
               centerY: branding.centerY,
 
               cornerRadius: branding.cornerRadius ?? 1,
@@ -285,11 +308,9 @@ export function createBottleBodyGeometry({
               y,
 
               width: branding.width,
-
               height: branding.height,
 
               centerX: 0,
-
               centerY: branding.centerY,
 
               cornerRadius: branding.cornerRadius ?? 1,
@@ -318,11 +339,9 @@ export function createBottleBodyGeometry({
           y,
 
           width: frame.outerWidth,
-
           height: frame.outerHeight,
 
           centerX: 0,
-
           centerY: branding.centerY,
 
           cornerRadius: frame.outerCornerRadius ?? 1,
@@ -335,11 +354,9 @@ export function createBottleBodyGeometry({
           y,
 
           width: frame.innerWidth,
-
           height: frame.innerHeight,
 
           centerX: 0,
-
           centerY: branding.centerY,
 
           cornerRadius: frame.innerCornerRadius ?? 0.6,
@@ -357,36 +374,24 @@ export function createBottleBodyGeometry({
       const frameRaise = frameMask * (branding?.frame?.raise ?? 0);
 
       /*
-       * Final displacement from the underlying profile.
-       *
-       * Positive values = inward.
+       * Positive inset moves inward.
        */
       const totalInset = bodyInset + groove + brandingRecess - frameRaise;
 
-      const x = current.x - normal.x * totalInset;
+      const x = current.x - profileNormal.x * totalInset;
 
-      const z = current.y - normal.y * totalInset;
+      const z = current.y - profileNormal.y * totalInset;
 
-      positions.push(x, y, z);
+      densePositions.push(x, y, z);
     }
   }
 
   /*
-   * --------------------------------------------------------
-   * STITCH RINGS
-   * --------------------------------------------------------
+   * Regular source-grid triangulation.
    *
-   * IMPORTANT:
-   *
-   * Winding is deliberately counter-clockwise when
-   * viewed from OUTSIDE the bottle.
-   *
-   * This means THREE.FrontSide renders the exterior.
+   * This is used only to calculate accurate source normals.
    */
-
-  const ringCount = yPositions.length;
-
-  for (let ringIndex = 0; ringIndex < ringCount - 1; ringIndex++) {
+  for (let ringIndex = 0; ringIndex < denseRingCount - 1; ringIndex++) {
     const currentRingStart = ringIndex * perimeterSegments;
 
     const nextRingStart = (ringIndex + 1) * perimeterSegments;
@@ -402,37 +407,191 @@ export function createBottleBodyGeometry({
 
       const d = nextRingStart + next;
 
-      /*
-       * Flipped from the previous winding:
-       *
-       * old:
-       * a, b, c
-       * c, b, d
-       *
-       * new:
-       * a, c, b
-       * c, d, b
-       */
-      indices.push(
-        a,
-        c,
-        b,
-
-        c,
-        d,
-        b,
-      );
+      indicesPushQuad(denseIndices, a, b, c, d);
     }
   }
+
+  /*
+   * --------------------------------------------------------
+   * SOURCE NORMALS
+   * --------------------------------------------------------
+   *
+   * Calculate normals while the mesh is still perfectly regular.
+   *
+   * These normals are then carried into the simplified geometry.
+   * The final irregular triangulation therefore cannot create
+   * new shading seams.
+   */
+
+  const denseGeometry = new THREE.BufferGeometry();
+
+  denseGeometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(densePositions, 3),
+  );
+
+  denseGeometry.setIndex(denseIndices);
+  denseGeometry.computeVertexNormals();
+
+  const denseNormalAttribute = denseGeometry.getAttribute(
+    "normal",
+  ) as THREE.BufferAttribute;
+
+  /*
+   * --------------------------------------------------------
+   * BUILD VERTICAL COLUMNS
+   * --------------------------------------------------------
+   *
+   * Each perimeter sample gets its own independent vertical
+   * polyline.
+   */
+
+  const denseColumns: DenseVertex[][] = [];
+
+  for (
+    let perimeterIndex = 0;
+    perimeterIndex < perimeterSegments;
+    perimeterIndex++
+  ) {
+    const column: DenseVertex[] = [];
+
+    for (let ringIndex = 0; ringIndex < denseRingCount; ringIndex++) {
+      const denseIndex = ringIndex * perimeterSegments + perimeterIndex;
+
+      const positionOffset = denseIndex * 3;
+
+      column.push({
+        denseIndex,
+
+        position: new THREE.Vector3(
+          densePositions[positionOffset],
+          densePositions[positionOffset + 1],
+          densePositions[positionOffset + 2],
+        ),
+
+        normal: new THREE.Vector3(
+          denseNormalAttribute.getX(denseIndex),
+          denseNormalAttribute.getY(denseIndex),
+          denseNormalAttribute.getZ(denseIndex),
+        ),
+      });
+    }
+
+    denseColumns.push(column);
+  }
+
+  /*
+   * --------------------------------------------------------
+   * SIMPLIFY EACH VERTICAL COLUMN INDEPENDENTLY
+   * --------------------------------------------------------
+   *
+   * The rear of the bottle can collapse to only the points
+   * needed for the top/bottom roundovers and straight body.
+   *
+   * Columns crossing the plaque/recess/frame naturally retain
+   * substantially more vertices.
+   */
+
+  const simplifiedDenseColumns = denseColumns.map((column) =>
+    simplifyVerticalColumn({
+      column,
+
+      positionTolerance: simplifyPositionTolerance,
+
+      normalToleranceRadians: THREE.MathUtils.degToRad(simplifyNormalTolerance),
+    }),
+  );
+
+  /*
+   * The dense temporary geometry is no longer needed.
+   */
+  denseGeometry.dispose();
+
+  /*
+   * --------------------------------------------------------
+   * BUILD FINAL VERTEX BUFFERS
+   * --------------------------------------------------------
+   */
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+
+  const columns: SimplifiedVertex[][] = [];
+
+  for (const sourceColumn of simplifiedDenseColumns) {
+    const column: SimplifiedVertex[] = [];
+
+    for (const vertex of sourceColumn) {
+      const index = positions.length / 3;
+
+      positions.push(vertex.position.x, vertex.position.y, vertex.position.z);
+
+      normals.push(vertex.normal.x, vertex.normal.y, vertex.normal.z);
+
+      column.push({
+        ...vertex,
+        index,
+      });
+    }
+
+    columns.push(column);
+  }
+
+  /*
+   * --------------------------------------------------------
+   * ZIPPER TRIANGULATION
+   * --------------------------------------------------------
+   *
+   * Adjacent vertical columns no longer need matching Y
+   * samples.
+   *
+   * Walk upward through both polylines, advancing whichever
+   * one reaches its next Y position first.
+   *
+   * This produces a continuous surface with no T-junctions.
+   */
+
+  const indices: number[] = [];
+
+  for (
+    let perimeterIndex = 0;
+    perimeterIndex < perimeterSegments;
+    perimeterIndex++
+  ) {
+    const nextPerimeterIndex = (perimeterIndex + 1) % perimeterSegments;
+
+    stitchColumns({
+      a: columns[perimeterIndex],
+      b: columns[nextPerimeterIndex],
+      indices,
+    });
+  }
+
+  /*
+   * --------------------------------------------------------
+   * FINAL GEOMETRY
+   * --------------------------------------------------------
+   */
+
+  const geometry = new THREE.BufferGeometry();
 
   geometry.setAttribute(
     "position",
     new THREE.Float32BufferAttribute(positions, 3),
   );
 
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+
   geometry.setIndex(indices);
 
-  geometry.computeVertexNormals();
+  /*
+   * DO NOT call computeVertexNormals() here.
+   *
+   * The normals deliberately come from the dense regular
+   * source mesh so the simplified topology cannot affect
+   * the bottle's lighting.
+   */
+
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
 
@@ -441,170 +600,291 @@ export function createBottleBodyGeometry({
 
 /*
  * ----------------------------------------------------------
- * ADAPTIVE Y SAMPLING
+ * VERTICAL COLUMN SIMPLIFICATION
  * ----------------------------------------------------------
+ *
+ * Ramer-Douglas-Peucker-style recursive simplification,
+ * adapted to our ordered Y parameter.
+ *
+ * A point may be removed only if BOTH:
+ *
+ * - its position is sufficiently close to interpolation
+ *   between the segment endpoints
+ *
+ * - its original dense-mesh normal is sufficiently close
+ *   to the interpolated endpoint normal
  */
 
-function createAdaptiveYPositions({
-  halfHeight,
-
-  bevelHeight,
-  bevelSegments,
-
-  branding,
-  brandingSegments,
+function simplifyVerticalColumn({
+  column,
+  positionTolerance,
+  normalToleranceRadians,
 }: {
-  halfHeight: number;
-
-  bevelHeight: number;
-  bevelSegments: number;
-
-  branding?: BottleBodyBrandingOptions;
-  brandingSegments: number;
+  column: DenseVertex[];
+  positionTolerance: number;
+  normalToleranceRadians: number;
 }) {
-  const values: number[] = [];
-
-  const bottom = -halfHeight;
-
-  const top = halfHeight;
-
-  const bottomBevelEnd = Math.min(top, bottom + bevelHeight);
-
-  const topBevelStart = Math.max(bottom, top - bevelHeight);
-
-  /*
-   * Bottom body roundover.
-   */
-  addRangeSamples({
-    values,
-
-    start: bottom,
-    end: bottomBevelEnd,
-
-    segments: bevelSegments,
-  });
-
-  /*
-   * Branding/detail region.
-   */
-  if (branding) {
-    const transitionMargin = Math.max(
-      branding.transition ?? 0.8,
-
-      branding.ribTransition ?? branding.transition ?? 0.8,
-
-      branding.frame?.outerTransition ?? 0,
-
-      branding.frame?.innerTransition ?? 0,
-    );
-
-    const brandingBottom =
-      branding.centerY - branding.height / 2 - transitionMargin;
-
-    const brandingTop =
-      branding.centerY + branding.height / 2 + transitionMargin;
-
-    const detailStart = THREE.MathUtils.clamp(
-      brandingBottom,
-      bottomBevelEnd,
-      topBevelStart,
-    );
-
-    const detailEnd = THREE.MathUtils.clamp(
-      brandingTop,
-      bottomBevelEnd,
-      topBevelStart,
-    );
-
-    /*
-     * One ring marks the start of the detailed area.
-     *
-     * The large straight region before it can be
-     * represented by a single quad strip.
-     */
-    addUniqueY(values, detailStart);
-
-    /*
-     * Dense geometry only through the branding area.
-     */
-    addRangeSamples({
-      values,
-
-      start: detailStart,
-      end: detailEnd,
-
-      segments: brandingSegments,
-    });
-
-    addUniqueY(values, detailEnd);
+  if (column.length <= 2) {
+    return column;
   }
 
-  /*
-   * Straight body terminates at start of top bevel.
-   */
-  addUniqueY(values, topBevelStart);
+  const keep = new Array<boolean>(column.length).fill(false);
 
-  /*
-   * Top body roundover.
-   */
-  addRangeSamples({
-    values,
+  keep[0] = true;
+  keep[column.length - 1] = true;
 
-    start: topBevelStart,
-    end: top,
-
-    segments: bevelSegments,
-  });
-
-  values.sort((a, b) => a - b);
-
-  /*
-   * Remove near-duplicates created where regions meet.
-   */
-  return values.filter(
-    (value, index) =>
-      index === 0 || Math.abs(value - values[index - 1]) > 0.000001,
+  simplifySection(
+    column,
+    0,
+    column.length - 1,
+    keep,
+    positionTolerance,
+    normalToleranceRadians,
   );
+
+  return column.filter((_, index) => keep[index]);
 }
 
-function addRangeSamples({
-  values,
-
-  start,
-  end,
-
-  segments,
-}: {
-  values: number[];
-
-  start: number;
-  end: number;
-
-  segments: number;
-}) {
-  if (Math.abs(end - start) < 0.000001) {
-    addUniqueY(values, start);
-
+function simplifySection(
+  column: DenseVertex[],
+  startIndex: number,
+  endIndex: number,
+  keep: boolean[],
+  positionTolerance: number,
+  normalToleranceRadians: number,
+) {
+  if (endIndex - startIndex <= 1) {
     return;
   }
 
-  const safeSegments = Math.max(1, Math.floor(segments));
+  const start = column[startIndex];
 
-  for (let i = 0; i <= safeSegments; i++) {
-    const t = i / safeSegments;
+  const end = column[endIndex];
 
-    addUniqueY(values, THREE.MathUtils.lerp(start, end, t));
+  const ySpan = end.position.y - start.position.y;
+
+  if (Math.abs(ySpan) < 0.000001) {
+    return;
   }
-}
 
-function addUniqueY(values: number[], value: number) {
-  for (let i = 0; i < values.length; i++) {
-    if (Math.abs(values[i] - value) < 0.000001) {
-      return;
+  let worstIndex = -1;
+  let worstScore = 1;
+
+  const expectedNormal = new THREE.Vector3();
+
+  for (let i = startIndex + 1; i < endIndex; i++) {
+    const current = column[i];
+
+    const t = (current.position.y - start.position.y) / ySpan;
+
+    /*
+     * Position error.
+     *
+     * Y already defines our parameter, so only X/Z need
+     * comparing against the interpolated surface.
+     */
+    const expectedX = THREE.MathUtils.lerp(start.position.x, end.position.x, t);
+
+    const expectedZ = THREE.MathUtils.lerp(start.position.z, end.position.z, t);
+
+    const positionError = Math.hypot(
+      current.position.x - expectedX,
+
+      current.position.z - expectedZ,
+    );
+
+    /*
+     * Normal error.
+     */
+    expectedNormal.copy(start.normal).lerp(end.normal, t).normalize();
+
+    const dot = THREE.MathUtils.clamp(
+      current.normal.dot(expectedNormal),
+      -1,
+      1,
+    );
+
+    const normalError = Math.acos(dot);
+
+    const positionScore =
+      positionTolerance > 0
+        ? positionError / positionTolerance
+        : positionError > 0
+          ? Infinity
+          : 0;
+
+    const normalScore =
+      normalToleranceRadians > 0
+        ? normalError / normalToleranceRadians
+        : normalError > 0
+          ? Infinity
+          : 0;
+
+    const score = Math.max(positionScore, normalScore);
+
+    if (score > worstScore) {
+      worstScore = score;
+      worstIndex = i;
     }
   }
 
-  values.push(value);
+  /*
+   * Everything between these endpoints can be represented
+   * within tolerance.
+   */
+  if (worstIndex < 0) {
+    return;
+  }
+
+  keep[worstIndex] = true;
+
+  simplifySection(
+    column,
+    startIndex,
+    worstIndex,
+    keep,
+    positionTolerance,
+    normalToleranceRadians,
+  );
+
+  simplifySection(
+    column,
+    worstIndex,
+    endIndex,
+    keep,
+    positionTolerance,
+    normalToleranceRadians,
+  );
+}
+
+/*
+ * ----------------------------------------------------------
+ * ZIPPER STITCH TWO VERTICAL COLUMNS
+ * ----------------------------------------------------------
+ */
+
+function stitchColumns({
+  a,
+  b,
+  indices,
+}: {
+  a: SimplifiedVertex[];
+  b: SimplifiedVertex[];
+  indices: number[];
+}) {
+  if (a.length < 2 || b.length < 2) {
+    return;
+  }
+
+  let ai = 0;
+  let bi = 0;
+
+  const epsilon = 0.000001;
+
+  while (ai < a.length - 1 || bi < b.length - 1) {
+    const currentA = a[ai];
+
+    const currentB = b[bi];
+
+    const nextA = ai < a.length - 1 ? a[ai + 1] : null;
+
+    const nextB = bi < b.length - 1 ? b[bi + 1] : null;
+
+    /*
+     * Both columns still have another point.
+     */
+    if (nextA && nextB) {
+      const nextAY = nextA.position.y;
+
+      const nextBY = nextB.position.y;
+
+      /*
+       * Same Y level.
+       *
+       * Generate the same two triangles we would have
+       * produced in the original regular quad grid.
+       */
+      if (Math.abs(nextAY - nextBY) <= epsilon) {
+        indices.push(
+          currentA.index,
+          nextA.index,
+          currentB.index,
+
+          nextA.index,
+          nextB.index,
+          currentB.index,
+        );
+
+        ai++;
+        bi++;
+
+        continue;
+      }
+
+      /*
+       * Column A reaches its next vertex first.
+       */
+      if (nextAY < nextBY) {
+        indices.push(currentA.index, nextA.index, currentB.index);
+
+        ai++;
+
+        continue;
+      }
+
+      /*
+       * Column B reaches its next vertex first.
+       */
+      indices.push(currentA.index, nextB.index, currentB.index);
+
+      bi++;
+
+      continue;
+    }
+
+    /*
+     * Only column A has points remaining.
+     */
+    if (nextA) {
+      indices.push(currentA.index, nextA.index, currentB.index);
+
+      ai++;
+
+      continue;
+    }
+
+    /*
+     * Only column B has points remaining.
+     */
+    if (nextB) {
+      indices.push(currentA.index, nextB.index, currentB.index);
+
+      bi++;
+    }
+  }
+}
+
+/*
+ * Regular source-grid quad.
+ *
+ * Counter-clockwise when viewed from outside.
+ */
+function indicesPushQuad(
+  indices: number[],
+  a: number,
+  b: number,
+  c: number,
+  d: number,
+) {
+  indices.push(
+    a,
+    c,
+    b,
+
+    c,
+    d,
+    b,
+  );
 }
 
 /*
