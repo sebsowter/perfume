@@ -5,7 +5,7 @@ import { BottleViewer } from "./BottleViewer";
 type View = "viewer" | "canvas";
 
 function App() {
-  const now = new Date(2026, 7, 25);
+  const now = new Date(2026, 7, 31);
 
   const [view, setView] = useState<View>("viewer");
 
@@ -35,7 +35,7 @@ function App() {
         }}
       >
         <p>R3F Fragrance Bottle</p>
-        <p>Phase 2 / Branding</p>
+        <p>Phase 3 / Final Compression</p>
         <p>{now.toLocaleDateString()}</p>
         <p>{view === "viewer" ? "Delivery Asset" : "Master Asset"}</p>
       </div>

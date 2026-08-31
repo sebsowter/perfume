@@ -19,42 +19,16 @@ const bottle = {
 };
 
 const body = {
-  /*
-   * Spec:
-   *
-   * Main bottle section = 81.5 mm
-   * Bottom detail       =  2.5 mm
-   * Top/shoulder total  =  2.5 mm
-   *
-   * Our top geometry adds domeHeight ABOVE topHeight,
-   * therefore:
-   *
-   * 2.3 + 0.2 = 2.5 mm
-   */
   mainHeight: 81.5,
 
   topHeight: 2.3,
+
   domeHeight: 0.3,
 
   baseHeight: 2.5,
 };
 
 const plaque = {
-  /*
-   * Previously:
-   *
-   * mainHeight = 76
-   * bodyBottom = -38
-   * centerY    = -26
-   *
-   * Therefore plaque centre was 12 mm above
-   * the bottom of the main ribbed body.
-   *
-   * Preserve that physical relationship now that
-   * mainHeight is correctly 81.5 mm:
-   *
-   * -81.5 / 2 + 12 = -28.75
-   */
   centerY: -28.75,
 
   surfaceOffset: -0.03,
@@ -76,12 +50,10 @@ const logo = {
 
 export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
   const monogramTexture = useTexture("/perfume/VB_Monogram.png");
-
+  const monogramImage = monogramTexture.image as HTMLImageElement;
   const monogramWidth = 7;
-
-  const image = monogramTexture.image as HTMLImageElement;
-
-  const monogramHeight = monogramWidth * (image.height / image.width);
+  const monogramHeight =
+    monogramWidth * (monogramImage.height / monogramImage.width);
 
   const {
     bodyGeometry,
@@ -96,15 +68,7 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
       depth: bottle.depth,
 
       exponent: 2.8,
-      segments: 256,
-    });
-
-    const topProfile = createSuperellipseProfile({
-      width: bottle.width - 1,
-      depth: bottle.depth - 1,
-
-      exponent: 2.8,
-      segments: 256,
+      segments: 128,
     });
 
     const baseProfile = createSuperellipseProfile({
@@ -112,7 +76,7 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
       depth: bottle.depth - 1,
 
       exponent: 2.8,
-      segments: 256,
+      segments: 128,
     });
 
     return {
@@ -123,16 +87,15 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
         ribCount: 80,
         ribDepth: 0.5,
         ribSharpness: 1.4,
+
         samplesPerRib: 12,
         samplesPerY: 3,
+
         simplifyPositionTolerance: 0.01,
         simplifyNormalTolerance: 0.5,
 
-        //brandingSegments: 40,
-        // bevelSegments: 8,
-
         bevelHeight: 1.5,
-        bevelInset: 0.8,
+        bevelInset: 0.7,
 
         branding: {
           width: plaque.width + plaque.frameWidth * 2 + plaque.frameMarginX * 2,
@@ -151,11 +114,9 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
 
           frame: {
             outerWidth: plaque.width + plaque.frameWidth * 2,
-
             outerHeight: plaque.height + plaque.frameHeight * 2,
 
             innerWidth: plaque.width,
-
             innerHeight: plaque.height,
 
             outerCornerRadius: 0.8,
@@ -169,16 +130,8 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
         },
       }),
 
-      /*
-       * Total top/shoulder height must be 2.5 mm.
-       *
-       * createBottleTopGeometry adds domeHeight above
-       * the supplied geometry height:
-       *
-       * 2.3 + 0.2 = 2.5 mm
-       */
       topGeometry: createBottleTopGeometry({
-        shape: topProfile.shape,
+        shape: baseProfile.shape,
 
         height: body.topHeight,
 
@@ -219,23 +172,18 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
         shape: bodyProfile.shape,
 
         width: plaque.width,
-
         height: plaque.height,
 
         centerY: plaque.centerY,
-
         raise: plaque.raise,
 
         bevelWidthX: 1,
         bevelWidthY: 0.8,
-
         bevelPower: 0.35,
 
         cornerRadius: 0.5,
-
         cornerSegments: 16,
         bevelSegments: 12,
-
         horizontalSegments: 32,
         verticalSegments: 8,
 
@@ -254,24 +202,15 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
         width: logo.width,
         centerY: plaque.centerY,
 
-        surfaceOffset: plaque.surfaceOffset + plaque.raise + 0.02,
-
         segmentsX: 32,
         segmentsY: 1,
+
+        surfaceOffset: plaque.surfaceOffset + plaque.raise + 0.02,
       }),
     };
   }, []);
 
-  /*
-   * --------------------------------------------------------
-   * VERTICAL STACK
-   * --------------------------------------------------------
-   *
-   * Main ribbed body is centred around local Y = 0.
-   */
-
   const bodyBottom = -body.mainHeight / 2;
-
   const bodyTop = body.mainHeight / 2;
 
   /*
@@ -280,9 +219,7 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
    * Base top touches body bottom exactly.
    */
   const baseTop = bodyBottom;
-
   const baseBottom = baseTop - body.baseHeight;
-
   const baseY = (baseBottom + baseTop) / 2;
 
   /*
@@ -292,17 +229,10 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
    * main body top exactly.
    */
   const topBottom = bodyTop;
-
   const topY = topBottom + body.topHeight / 2;
 
   /*
-   * The top geometry reaches:
-   *
-   * bodyTop
-   * + topHeight
-   * + domeHeight
-   *
-   * = 2.5 mm above the main body.
+   * DOME TOP
    */
   const domeTop = bodyTop + body.topHeight + body.domeHeight;
 
@@ -312,16 +242,13 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
    * Bottom of cap touches the peak of the dome exactly.
    */
   const capBottom = domeTop;
-
   const capY = capBottom + bottle.capHeight / 2;
-
   const capTop = capBottom + bottle.capHeight;
 
   /*
    * Complete bottle bounds.
    */
   const bottleBottom = baseBottom;
-
   const bottleTop = capTop;
 
   /*
@@ -333,7 +260,7 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
     <group position={[0, -bottleCenterY, 0]} ref={ref}>
       {/* Main ribbed body */}
       <mesh geometry={bodyGeometry}>
-        <BottleBodyMaterial2 />
+        <BottleBodyMaterial />
       </mesh>
 
       {/* Smooth top / shoulder */}
@@ -375,7 +302,13 @@ export const Bottle = forwardRef<THREE.Group>(function Bottle(_props, ref) {
   );
 });
 
-function BottleBodyMaterial2() {
+/*
+function BottleTestMaterial() {
+  return <meshBasicMaterial color="green" wireframe />;
+}
+*/
+
+function BottleBodyMaterial() {
   return (
     <meshStandardMaterial
       color="#b88a32"
@@ -384,10 +317,6 @@ function BottleBodyMaterial2() {
       envMapIntensity={1.15}
     />
   );
-}
-
-function BottleBodyMaterial() {
-  return <meshBasicMaterial color="gray" wireframe />;
 }
 
 function BottlePlateMaterial() {
